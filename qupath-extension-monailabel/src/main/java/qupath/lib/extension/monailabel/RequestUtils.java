@@ -34,6 +34,9 @@ public class RequestUtils {
 			HttpURLConnection connection = (HttpURLConnection) new URL(requestURI).openConnection();
 			connection.setRequestMethod(method);
 			connection.setRequestProperty("Content-Type", "application/json");
+			connection.setDoInput(true);
+			connection.setDoOutput(true);
+
 			if (body != null && !body.isEmpty()) {
 				connection.getOutputStream().write(body.getBytes("UTF-8"));
 			}

@@ -135,7 +135,8 @@ public class RunInference implements Runnable {
 	private int updateAnnotations(NodeList annotation_list, ROI roi, ImageData<BufferedImage> imageData) {
 		List<PathObject> objs = imageData.getHierarchy().getFlattenedObjectList(null);
 		for (int i = 0; i < objs.size(); i++) {
-			if (objs.get(i).getName() == "MonaiLabelAnnotation") {
+			String name = objs.get(i).getName();
+			if (name != null && name.startsWith("MLA_")) {
 				ROI r = objs.get(i).getROI();
 				if (roi.contains(r.getCentroidX(), r.getCentroidY())) {
 					imageData.getHierarchy().removeObjectWithoutUpdate(objs.get(i), false);
@@ -143,6 +144,7 @@ public class RunInference implements Runnable {
 			}
 		}
 
+		
 		int count = 0;
 		for (int i = 0; i < annotation_list.getLength(); i++) {
 			Node annotation = annotation_list.item(i);
@@ -178,7 +180,7 @@ public class RunInference implements Runnable {
 
 				PathClass pclass = PathClassFactory.getPathClass(annotationClass, Color.RED.getRGB());
 				annotationObject.setPathClass(pclass);
-				annotationObject.setName("MonaiLabelAnnotation");
+				annotationObject.setName("MLA_" + annotationClass);
 
 				imageData.getHierarchy().addPathObjectWithoutUpdate(annotationObject);
 				count++;
