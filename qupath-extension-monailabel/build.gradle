@@ -1,0 +1,13 @@
+plugins {
+  id 'qupath.extension-conventions'
+  id 'java-library'
+}
+
+ext.moduleName = 'qupath.extension.monailabel'
+archivesBaseName = 'qupath-extension-monailabel'
+description = "QuPath extension for MONAILabel"
+
+dependencies {
+  implementation "com.google.guava:guava:31.1-jre"
+}
+
