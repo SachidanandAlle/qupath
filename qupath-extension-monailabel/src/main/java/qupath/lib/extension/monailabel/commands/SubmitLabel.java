@@ -37,6 +37,7 @@ import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 
 import qupath.lib.extension.monailabel.MonaiLabelClient;
+import qupath.lib.extension.monailabel.Utils;
 import qupath.lib.gui.QuPathGUI;
 import qupath.lib.gui.dialogs.Dialogs;
 import qupath.lib.images.ImageData;
@@ -57,18 +58,17 @@ public class SubmitLabel implements Runnable {
 		try {
 			var viewer = qupath.getViewer();
 			var imageData = viewer.getImageData();
-			String image = com.google.common.io.Files.getNameWithoutExtension(imageData.getServerPath());
+			String image = Utils.getNameWithoutExtension(imageData.getServerPath());
 			path = getAnnotationsXml(image, imageData);
 			logger.info("Annotations XML: " + path);
 
 			String params = "{}";
 
-			if (Dialogs.showYesNoDialog("MONAI Label - Pathology",
-					"Do you like to submit this annotation to MONAI Label Server?\n\n"
-							+ "This might override any existing annotations in MONAI Label server for: '" + image
-							+ "'")) {
+			if (Dialogs.showYesNoDialog("MONAILabel", "Do you like to submit this annotation to MONAI Label Server?\n\n"
+					+ "This might override any existing annotations in MONAI Label server for: '" + image + "'")) {
 				String res = MonaiLabelClient.saveLabel(image, path.toFile(), null, params);
 				logger.info("SUBMIT:: resp = " + res);
+				Dialogs.showInfoNotification("MONALabel", "Label/Annotations saved in Server");
 			}
 		} catch (Exception ex) {
 			ex.printStackTrace();

@@ -33,11 +33,10 @@ import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 import org.xml.sax.SAXException;
 
-import com.google.common.io.Files;
-
 import qupath.lib.extension.monailabel.MonaiLabelClient;
 import qupath.lib.extension.monailabel.MonaiLabelClient.RequestInfer;
 import qupath.lib.extension.monailabel.MonaiLabelClient.ResponseInfo;
+import qupath.lib.extension.monailabel.Utils;
 import qupath.lib.geom.Point2;
 import qupath.lib.gui.QuPathGUI;
 import qupath.lib.gui.dialogs.Dialogs;
@@ -86,7 +85,7 @@ public class RunInference implements Runnable {
 			list.addIntParameter("Width", "Width", bbox[2]);
 			list.addIntParameter("Height", "Height", bbox[3]);
 
-			if (Dialogs.showParameterDialog("MONAI Label - Pathology", list)) {
+			if (Dialogs.showParameterDialog("MONAILabel", list)) {
 				String model = (String) list.getChoiceParameterValue("Model");
 				bbox[0] = list.getIntParameterValue("X").intValue();
 				bbox[1] = list.getIntParameterValue("Y").intValue();
@@ -97,7 +96,7 @@ public class RunInference implements Runnable {
 			}
 		} catch (Exception ex) {
 			ex.printStackTrace();
-			Dialogs.showErrorMessage("MONAI Label - Pathology", ex);
+			Dialogs.showErrorMessage("MONAILabel", ex);
 		}
 	}
 
@@ -131,12 +130,12 @@ public class RunInference implements Runnable {
 	}
 
 	private void runInference(String model, Set<String> labels, int[] bbox, ImageData<BufferedImage> imageData)
-			throws SAXException, IOException, ParserConfigurationException {
+			throws SAXException, IOException, ParserConfigurationException, InterruptedException {
 		logger.info("MONAILabel Annotation - Run Inference...");
 		logger.info("Model: " + model);
 		logger.info("Labels: " + labels);
 
-		String image = Files.getNameWithoutExtension(imageData.getServerPath());
+		String image = Utils.getNameWithoutExtension(imageData.getServerPath());
 
 		RequestInfer req = new RequestInfer();
 		req.location[0] = bbox[0];

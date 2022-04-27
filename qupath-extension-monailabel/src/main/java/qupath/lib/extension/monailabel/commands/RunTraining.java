@@ -46,7 +46,7 @@ public class RunTraining implements Runnable {
 			list.addIntParameter("train_batch_size", "train_batch_size", 1);
 			list.addIntParameter("val_batch_size", "val_batch_size", 1);
 
-			if (Dialogs.showParameterDialog("MONAI Label - Pathology", list)) {
+			if (Dialogs.showParameterDialog("MONAILabel", list)) {
 				String model = (String) list.getChoiceParameterValue("Model");
 				int max_epochs = list.getIntParameterValue("max_epochs").intValue();
 				int train_batch_size = list.getIntParameterValue("train_batch_size").intValue();
@@ -59,10 +59,11 @@ public class RunTraining implements Runnable {
 
 				String res = MonaiLabelClient.train(model, params);
 				logger.info("TRAINING:: resp = " + res);
+				Dialogs.showInfoNotification("MONALabel", "Training job started...");
 			}
 		} catch (Exception ex) {
 			ex.printStackTrace();
-			Dialogs.showErrorMessage("MONAI Label - Pathology", ex);
+			Dialogs.showErrorMessage("MONAILabel", ex);
 		}
 	}
 }

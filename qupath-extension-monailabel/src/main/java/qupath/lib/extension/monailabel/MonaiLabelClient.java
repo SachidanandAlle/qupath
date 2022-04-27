@@ -124,7 +124,7 @@ public class MonaiLabelClient {
 		public InferParams params = new InferParams();
 	};
 
-	public static ResponseInfo info() throws IOException {
+	public static ResponseInfo info() throws IOException, InterruptedException {
 		String uri = "/info/";
 		String res = RequestUtils.request("GET", uri, null);
 		logger.info("MONAILabel Annotation - INFO => " + res);
@@ -134,7 +134,7 @@ public class MonaiLabelClient {
 	}
 
 	public static Document infer(String model, String image, RequestInfer req)
-			throws SAXException, IOException, ParserConfigurationException {
+			throws SAXException, IOException, ParserConfigurationException, InterruptedException {
 
 		String uri = "/infer/wsi/" + URLEncoder.encode(model, "UTF-8") + "?image=" + URLEncoder.encode(image, "UTF-8")
 				+ "&output=asap";
@@ -151,12 +151,13 @@ public class MonaiLabelClient {
 		return dom;
 	}
 
-	public static String train(String model, String params) throws IOException {
+	public static String train(String model, String params) throws IOException, InterruptedException {
 		String uri = "/train/" + URLEncoder.encode(model, "UTF-8");
 		return RequestUtils.request("POST", uri, params);
 	}
 
-	public static String saveLabel(String image, File label, String tag, String params) throws IOException {
+	public static String saveLabel(String image, File label, String tag, String params)
+			throws IOException, InterruptedException {
 		String uri = "/datastore/label?image=" + URLEncoder.encode(image, "UTF-8");
 		if (tag != null && !tag.isEmpty()) {
 			uri += "&tag=" + tag;
