@@ -14,10 +14,14 @@ limitations under the License.
 package qupath.lib.extension.monailabel;
 
 import java.io.ByteArrayInputStream;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.reflect.Type;
+import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -31,23 +35,69 @@ import org.w3c.dom.Document;
 import org.xml.sax.SAXException;
 
 import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonDeserializationContext;
+import com.google.gson.JsonDeserializer;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParseException;
 
+import javafx.util.Pair;
 import qupath.lib.geom.Point2;
 
 public class MonaiLabelClient {
 	private final static Logger logger = LoggerFactory.getLogger(MonaiLabelClient.class);
 
+	public static class Labels {
+		public String[] array;
+		public Map<String, Integer> map;
+
+		public String[] labels() {
+			if (array != null) {
+				return array;
+			}
+			return map.keySet().toArray(String[]::new);
+		}
+	}
+
+	public static class LabelsDeserializer implements JsonDeserializer<Labels> {
+
+		@Override
+		public Labels deserialize(JsonElement paramJsonElement, Type paramType,
+				JsonDeserializationContext paramJsonDeserializationContext) throws JsonParseException {
+
+			Labels labels = new Labels();
+			if (paramJsonElement.isJsonArray()) {
+				JsonArray arr = paramJsonElement.getAsJsonArray();
+				labels.array = new String[arr.size()];
+				for (int i = 0; i < arr.size(); i++) {
+					labels.array[i] = arr.get(i).getAsString();
+				}
+			} else {
+				JsonObject o = paramJsonElement.getAsJsonObject();
+				labels.map = new HashMap<String, Integer>();
+				for (String key : o.keySet()) {
+					labels.map.put(key, o.get(key).getAsInt());
+				}
+			}
+			return labels;
+		}
+
+	}
+
 	public static class Model {
 		public String type;
 		public int dimension;
 		public String description;
+		public Labels labels;
 	}
 
 	public static class ResponseInfo {
 		public String name;
 		public String description;
 		public String version;
-		public String[] labels;
+		public Labels labels;
 		public Map<String, Model> models;
 	}
 
@@ -74,21 +124,22 @@ public class MonaiLabelClient {
 		public InferParams params = new InferParams();
 	};
 
-	public static ResponseInfo info() {
+	public static ResponseInfo info() throws IOException {
 		String uri = "/info/";
 		String res = RequestUtils.request("GET", uri, null);
 		logger.info("MONAILabel Annotation - INFO => " + res);
 
-		return new Gson().fromJson(res, ResponseInfo.class);
+		Gson gson = new GsonBuilder().registerTypeAdapter(Labels.class, new LabelsDeserializer()).create();
+		return gson.fromJson(res, ResponseInfo.class);
 	}
 
 	public static Document infer(String model, String image, RequestInfer req)
 			throws SAXException, IOException, ParserConfigurationException {
 
-		String uri = "/infer/wsi/" + model + "?image=" + image + "&output=asap";
+		String uri = "/infer/wsi/" + URLEncoder.encode(model, "UTF-8") + "?image=" + URLEncoder.encode(image, "UTF-8")
+				+ "&output=asap";
 
-		Gson gson = new Gson();
-		String jsonBody = gson.toJson(req, RequestInfer.class);
+		String jsonBody = new Gson().toJson(req, RequestInfer.class);
 		logger.info("MONAILabel Annotation - BODY => " + jsonBody);
 
 		String response = RequestUtils.request("POST", uri, jsonBody);
@@ -100,4 +151,17 @@ public class MonaiLabelClient {
 		return dom;
 	}
 
+	public static String train(String model, String params) throws IOException {
+		String uri = "/train/" + URLEncoder.encode(model, "UTF-8");
+		return RequestUtils.request("POST", uri, params);
+	}
+
+	public static String saveLabel(String image, File label, String tag, String params) throws IOException {
+		String uri = "/datastore/label?image=" + URLEncoder.encode(image, "UTF-8");
+		if (tag != null && !tag.isEmpty()) {
+			uri += "&tag=" + tag;
+		}
+
+		return RequestUtils.requestMultiPart("PUT", uri, new Pair<String, File>("label", label), params);
+	}
 }

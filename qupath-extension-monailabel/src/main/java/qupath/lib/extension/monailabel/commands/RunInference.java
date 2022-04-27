@@ -1,15 +1,39 @@
+/*
+Copyright (c) MONAI Consortium
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+    http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package qupath.lib.extension.monailabel.commands;
 
 import java.awt.Color;
 import java.awt.image.BufferedImage;
+import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+import javax.xml.parsers.ParserConfigurationException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.w3c.dom.Document;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
+import org.xml.sax.SAXException;
+
+import com.google.common.io.Files;
 
 import qupath.lib.extension.monailabel.MonaiLabelClient;
 import qupath.lib.extension.monailabel.MonaiLabelClient.RequestInfer;
@@ -29,12 +53,6 @@ import qupath.lib.roi.RectangleROI;
 import qupath.lib.roi.interfaces.ROI;
 import qupath.lib.scripting.QP;
 
-/**
- * Run Inference.
- * 
- * @author Sachidanand Alle
- *
- */
 public class RunInference implements Runnable {
 	private final static Logger logger = LoggerFactory.getLogger(RunInference.class);
 
@@ -46,32 +64,40 @@ public class RunInference implements Runnable {
 
 	@Override
 	public void run() {
-		var viewer = qupath.getViewer();
-		var imageData = viewer.getImageData();
-		var selected = imageData.getHierarchy().getSelectionModel().getSelectedObject();
-		var roi = selected != null ? selected.getROI() : null;
-		int[] bbox = getBBOX(roi);
+		try {
+			var viewer = qupath.getViewer();
+			var imageData = viewer.getImageData();
+			var selected = imageData.getHierarchy().getSelectionModel().getSelectedObject();
+			var roi = selected != null ? selected.getROI() : null;
+			int[] bbox = getBBOX(roi);
 
-		ResponseInfo info = MonaiLabelClient.info();
-		List<String> names = new ArrayList<String>();
-		for (String n : info.models.keySet())
-			names.add(n);
+			ResponseInfo info = MonaiLabelClient.info();
+			List<String> names = new ArrayList<String>();
+			Map<String, String[]> labels = new HashMap<String, String[]>();
+			for (String n : info.models.keySet()) {
+				names.add(n);
+				labels.put(n, info.models.get(n).labels.labels());
+			}
 
-		ParameterList list = new ParameterList();
-		list.addChoiceParameter("Model", "Model Name", names.isEmpty() ? "" : names.get(0), names);
-		list.addIntParameter("X", "Location-x", bbox[0]);
-		list.addIntParameter("Y", "Location-y", bbox[1]);
-		list.addIntParameter("Width", "Width", bbox[2]);
-		list.addIntParameter("Height", "Height", bbox[3]);
+			ParameterList list = new ParameterList();
+			list.addChoiceParameter("Model", "Model Name", names.isEmpty() ? "" : names.get(0), names);
+			list.addIntParameter("X", "Location-x", bbox[0]);
+			list.addIntParameter("Y", "Location-y", bbox[1]);
+			list.addIntParameter("Width", "Width", bbox[2]);
+			list.addIntParameter("Height", "Height", bbox[3]);
 
-		if (Dialogs.showParameterDialog("MONAI Label - Pathology", list)) {
-			String model = (String) list.getChoiceParameterValue("Model");
-			bbox[0] = list.getIntParameterValue("X").intValue();
-			bbox[1] = list.getIntParameterValue("Y").intValue();
-			bbox[2] = list.getIntParameterValue("Width").intValue();
-			bbox[3] = list.getIntParameterValue("Height").intValue();
+			if (Dialogs.showParameterDialog("MONAI Label - Pathology", list)) {
+				String model = (String) list.getChoiceParameterValue("Model");
+				bbox[0] = list.getIntParameterValue("X").intValue();
+				bbox[1] = list.getIntParameterValue("Y").intValue();
+				bbox[2] = list.getIntParameterValue("Width").intValue();
+				bbox[3] = list.getIntParameterValue("Height").intValue();
 
-			runInference(model, bbox, imageData);
+				runInference(model, new HashSet<String>(Arrays.asList(labels.get(model))), bbox, imageData);
+			}
+		} catch (Exception ex) {
+			ex.printStackTrace();
+			Dialogs.showErrorMessage("MONAI Label - Pathology", ex);
 		}
 	}
 
@@ -79,7 +105,7 @@ public class RunInference implements Runnable {
 		List<PathObject> objs = imageData.getHierarchy().getFlattenedObjectList(null);
 		ArrayList<Point2> clicks = new ArrayList<Point2>();
 		for (int i = 0; i < objs.size(); i++) {
-			if (objs.get(i).getName() == name) {
+			if (objs.get(i).getPathClass() != null && objs.get(i).getPathClass().getName() == name) {
 				ROI r = objs.get(i).getROI();
 				List<Point2> points = r.getAllPoints();
 				for (Point2 p : points) {
@@ -104,39 +130,39 @@ public class RunInference implements Runnable {
 		return new int[] { x, y, w, h };
 	}
 
-	private void runInference(String model, int[] bbox, ImageData<BufferedImage> imageData) {
+	private void runInference(String model, Set<String> labels, int[] bbox, ImageData<BufferedImage> imageData)
+			throws SAXException, IOException, ParserConfigurationException {
 		logger.info("MONAILabel Annotation - Run Inference...");
+		logger.info("Model: " + model);
+		logger.info("Labels: " + labels);
 
-		try {
-			String image = com.google.common.io.Files.getNameWithoutExtension(imageData.getServerPath());
+		String image = Files.getNameWithoutExtension(imageData.getServerPath());
 
-			RequestInfer req = new RequestInfer();
-			req.location[0] = bbox[0];
-			req.location[1] = bbox[1];
-			req.size[0] = bbox[2];
-			req.size[1] = bbox[3];
+		RequestInfer req = new RequestInfer();
+		req.location[0] = bbox[0];
+		req.location[1] = bbox[1];
+		req.size[0] = bbox[2];
+		req.size[1] = bbox[3];
 
-			ROI roi = ROIs.createRectangleROI(bbox[0], bbox[1], bbox[2], bbox[3], null);
-			req.params.addClicks(getClicks("M_POS", imageData, roi), true);
-			req.params.addClicks(getClicks("M_NEG", imageData, roi), false);
+		ROI roi = ROIs.createRectangleROI(bbox[0], bbox[1], bbox[2], bbox[3], null);
+		req.params.addClicks(getClicks("Positive", imageData, roi), true);
+		req.params.addClicks(getClicks("Negative", imageData, roi), false);
 
-			Document dom = MonaiLabelClient.infer(model, image, req);
-			NodeList annotation_list = dom.getElementsByTagName("Annotation");
-			int count = updateAnnotations(annotation_list, roi, imageData);
+		Document dom = MonaiLabelClient.infer(model, image, req);
+		NodeList annotation_list = dom.getElementsByTagName("Annotation");
+		int count = updateAnnotations(labels, annotation_list, roi, imageData);
 
-			// Update hierarchy to see changes in QuPath's hierarchy
-			QP.fireHierarchyUpdate(imageData.getHierarchy());
-			logger.info("MONAILabel Annotation - Done! => Total Objects Added: " + count);
-		} catch (Exception ex) {
-			ex.printStackTrace();
-		}
+		// Update hierarchy to see changes in QuPath's hierarchy
+		QP.fireHierarchyUpdate(imageData.getHierarchy());
+		logger.info("MONAILabel Annotation - Done! => Total Objects Added: " + count);
 	}
 
-	private int updateAnnotations(NodeList annotation_list, ROI roi, ImageData<BufferedImage> imageData) {
+	private int updateAnnotations(Set<String> labels, NodeList annotation_list, ROI roi,
+			ImageData<BufferedImage> imageData) {
 		List<PathObject> objs = imageData.getHierarchy().getFlattenedObjectList(null);
 		for (int i = 0; i < objs.size(); i++) {
-			String name = objs.get(i).getName();
-			if (name != null && name.startsWith("MLA_")) {
+			String name = objs.get(i).getPathClass() != null ? objs.get(i).getPathClass().getName() : null;
+			if (name != null && labels.contains(name)) {
 				ROI r = objs.get(i).getROI();
 				if (roi.contains(r.getCentroidX(), r.getCentroidY())) {
 					imageData.getHierarchy().removeObjectWithoutUpdate(objs.get(i), false);
@@ -144,7 +170,6 @@ public class RunInference implements Runnable {
 			}
 		}
 
-		
 		int count = 0;
 		for (int i = 0; i < annotation_list.getLength(); i++) {
 			Node annotation = annotation_list.item(i);
@@ -180,7 +205,6 @@ public class RunInference implements Runnable {
 
 				PathClass pclass = PathClassFactory.getPathClass(annotationClass, Color.RED.getRGB());
 				annotationObject.setPathClass(pclass);
-				annotationObject.setName("MLA_" + annotationClass);
 
 				imageData.getHierarchy().addPathObjectWithoutUpdate(annotationObject);
 				count++;

@@ -9,5 +9,5 @@ description = "QuPath extension for MONAILabel"
 
 dependencies {
   implementation "com.google.guava:guava:31.1-jre"
+  implementation "org.apache.httpcomponents.client5:httpclient5:5.1.3"
 }
-
