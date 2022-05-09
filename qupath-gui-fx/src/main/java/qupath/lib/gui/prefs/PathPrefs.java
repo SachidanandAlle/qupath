@@ -4,7 +4,7 @@
  * %%
  * Copyright (C) 2014 - 2016 The Queen's University of Belfast, Northern Ireland
  * Contact: IP Management (ipmanagement@qub.ac.uk)
- * Copyright (C) 2018 - 2020 QuPath developers, The University of Edinburgh
+ * Copyright (C) 2018 - 2022 QuPath developers, The University of Edinburgh
  * %%
  * QuPath is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as
@@ -62,6 +62,7 @@ import javafx.beans.property.StringProperty;
 import javafx.collections.FXCollections;
 import javafx.collections.ListChangeListener.Change;
 import javafx.collections.ObservableList;
+import javafx.scene.text.FontWeight;
 import qupath.lib.common.ColorTools;
 import qupath.lib.common.GeneralTools;
 import qupath.lib.common.ThreadTools;
@@ -93,7 +94,7 @@ public class PathPrefs {
 	/**
 	 * Default name for preference node in this QuPath version
 	 */
-	private final static String DEFAULT_NODE_NAME = "io.github.qupath/0.3";
+	private final static String DEFAULT_NODE_NAME = "io.github.qupath/0.4";
 	
 	/**
 	 * Name for preference node
@@ -116,7 +117,7 @@ public class PathPrefs {
 	 * For now, this isn't supported.
 	 */
 	@SuppressWarnings("unused")
-	private final static String PREVIOUS_NODE_NAME = "io.github.qupath.0.2.0";
+	private final static String PREVIOUS_NODE_NAME = "io.github.qupath/0.3";
 	
 	/**
 	 * Flag used to trigger when properties should be reset to their default values.
@@ -905,6 +906,16 @@ public class PathPrefs {
 	}
 	
 	
+	private static BooleanProperty showMeasurementTableThumbnailsProperty = PathPrefs.createPersistentPreference("showMeasurementTableThumbnailsProperty", true);
+	
+	/**
+	 * Specify whether measurement tables should show thumbnail images by default or not.
+	 * @return
+	 */
+	public static BooleanProperty showMeasurementTableThumbnailsProperty() {
+		return showMeasurementTableThumbnailsProperty;
+	}
+	
 	private static BooleanProperty enableFreehandTools = createPersistentPreference("enableFreehandTools", true);
 	
 	
@@ -1221,15 +1232,49 @@ public class PathPrefs {
 		}
 	}
 	
-	private static ObjectProperty<FontSize> fontSize = PathPrefs.createPersistentPreference(
-			"locationFontSize", FontSize.MEDIUM, FontSize.class);
+	private static ObjectProperty<FontSize> scalebarFontSize = PathPrefs.createPersistentPreference(
+			"scalebarFontSize", FontSize.MEDIUM, FontSize.class);
 	
 	/**
-	 * Preferred font size in the viewer.
+	 * Preferred font size for the scalebar in the viewer.
 	 * @return
 	 */
-	public static ObjectProperty<FontSize> viewerFontSizeProperty() {
-		return fontSize;
+	public static ObjectProperty<FontSize> scalebarFontSizeProperty() {
+		return scalebarFontSize;
+	}
+
+	private static ObjectProperty<FontSize> locationFontSize = PathPrefs.createPersistentPreference(
+			"locationFontSize", FontSize.MEDIUM, FontSize.class);
+
+	/**
+	 * Preferred font size for the location text in the viewer.
+	 * @return
+	 */
+	public static ObjectProperty<FontSize> locationFontSizeProperty() {
+		return locationFontSize;
+	}
+	
+	private static ObjectProperty<FontWeight> scalebarFontWeight = PathPrefs.createPersistentPreference(
+			"scalebarFontWeight", FontWeight.NORMAL, FontWeight.class);
+
+	/**
+	 * Preferred font weight in the viewer.
+	 * @return
+	 */
+	public static ObjectProperty<FontWeight> scalebarFontWeightProperty() {
+		return scalebarFontWeight;
+	}
+	
+	
+	private static DoubleProperty scalebarLineWidth = PathPrefs.createPersistentPreference(
+			"scalebarLineWidth", 3.0);
+
+	/**
+	 * Preferred line width for the scalebar.
+	 * @return
+	 */
+	public static DoubleProperty scalebarLineWidthProperty() {
+		return scalebarLineWidth;
 	}
 	
 	

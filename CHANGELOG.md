@@ -3,6 +3,17 @@
 This is a work-in-progress.
 
 ### Enhancements
+
+* Objects now have IDs
+  * This aims to make it much easier to match up objects whenever some further analysis is done elsewhere (e.g. classification or clustering in Python or R)
+  * See https://github.com/qupath/qupath/pull/959
+* Completely rewritten 'View -> Show view tracker' command
+* Improved scalebar preferences
+  * New preferences to control font size/weight & line width (bottom left)
+  * Independently adjust font size for location text (bottom right)
+* Improved measurement tables
+  * Include thumbnail images for each object (can be turned off with 'Include image column in measurement tables' preference)
+  * Center viewer on an object by selecting it & pressing the 'spacebar'
 * Many script editor improvements, including:
   * Added 'Replace/Next' and 'Replace all' features to Find window (https://github.com/qupath/qupath/pull/898)
   * New lines now trigger caret following (https://github.com/qupath/qupath/pull/900)
@@ -20,6 +31,10 @@ This is a work-in-progress.
   * Built-in ImageJ plugin to send RoiManager ROIs to QuPath (not only overlays)
   * Retain ROI position information when sending ROIs from ImageJ (hyper)stacks
 * Updated prompt to set the image type
+* Missing thumbnails are automatically regenerated when a project is opened
+* Avoid converting the pixel type to 32-bit unnecessarily when sending image regions to ImageJ
+* Warn if trying to train a pixel classifier with too many features (https://github.com/qupath/qupath/issues/947)
+* Directory choosers can now have titles (https://github.com/qupath/qupath/issues/940)
 
 ### Bugs fixed
 * Reading from Bio-Formats blocks forever when using multiple series outside a project (https://github.com/qupath/qupath/issues/894)
@@ -28,13 +43,21 @@ This is a work-in-progress.
 * 'Zoom to fit' doesn't handle changes in window size
 * Duplicating images with some names can cause an exception (https://github.com/qupath/qupath/issues/942)
 * Removing >255 measurements throws error when reproducing from workflow script (https://github.com/qupath/qupath/issues/915)
+* QuPath doesn't support some channel combinations through Bio-Formats (https://github.com/qupath/qupath/issues/956)
 
-### Known issues
-* Bio-Formats 6.9.0 has problems with a subset of svs files, see https://github.com/ome/bioformats/issues/3757
+### Changes through Bio-Formats 6.9.1
+* Bio-Formats 6.9.1 brings several important new features to QuPath, including:
+  * Support for reading DICOM whole slide images
+  * Improved handling of brightfield CZI images (i.e. filling unscanned regions in white, not black)
+  * Substantial performance improvements for reading/writing some formats (including OME-TIFF)
+* Bio-Formats in combination with Java 17 also has some known issues
+  * Unable to properly read a subset of svs files (https://github.com/ome/bioformats/issues/3757)
+  * Memoization is not possible with Java 17, and turned off in QuPath by default (https://github.com/qupath/qupath/issues/957)
+* For details, see https://docs.openmicroscopy.org/bio-formats/6.9.1/about/whats-new.html
 
 ### Dependency updates
 * Adoptium OpenJDK 17
-* Bio-Formats 6.9.0
+* Bio-Formats 6.9.1
 * JavaFX 17.0.2
 * Groovy 4.0.1
 * Gson 2.9.0
