@@ -71,6 +71,7 @@ public class RunInference implements Runnable {
 			var selected = imageData.getHierarchy().getSelectionModel().getSelectedObject();
 			var roi = selected != null ? selected.getROI() : null;
 			int[] bbox = getBBOX(roi);
+			int tileSize = 1024;
 			if (bbox[2] == 0 && bbox[3] == 0 && selectedBBox != null) {
 				bbox = selectedBBox;
 			}
@@ -93,6 +94,7 @@ public class RunInference implements Runnable {
 			list.addIntParameter("Y", "Location-y", bbox[1]);
 			list.addIntParameter("Width", "Width", bbox[2]);
 			list.addIntParameter("Height", "Height", bbox[3]);
+			list.addIntParameter("TileSize", "TileSize", 1024);
 
 			boolean override = !info.models.get(selectedModel).nuclick;
 			list.addBooleanParameter("Override", "Override", override);
@@ -104,10 +106,11 @@ public class RunInference implements Runnable {
 				bbox[2] = list.getIntParameterValue("Width").intValue();
 				bbox[3] = list.getIntParameterValue("Height").intValue();
 				override = list.getBooleanParameterValue("Override").booleanValue();
+				tileSize = list.getIntParameterValue("TileSize").intValue();
 
 				selectedModel = model;
 				selectedBBox = bbox;
-				runInference(model, new HashSet<String>(Arrays.asList(labels.get(model))), bbox, imageData, override);
+				runInference(model, new HashSet<String>(Arrays.asList(labels.get(model))), bbox, tileSize, imageData, override);
 			}
 		} catch (Exception ex) {
 			ex.printStackTrace();
@@ -147,7 +150,7 @@ public class RunInference implements Runnable {
 		return new int[] { x, y, w, h };
 	}
 
-	private void runInference(String model, Set<String> labels, int[] bbox, ImageData<BufferedImage> imageData,
+	private void runInference(String model, Set<String> labels, int[] bbox, int tileSize, ImageData<BufferedImage> imageData,
 			boolean override) throws SAXException, IOException, ParserConfigurationException, InterruptedException {
 		logger.info("MONAILabel Annotation - Run Inference...");
 		logger.info("Model: " + model + "; override: " + override + "; Labels: " + labels);
@@ -159,6 +162,8 @@ public class RunInference implements Runnable {
 		req.location[1] = bbox[1];
 		req.size[0] = bbox[2];
 		req.size[1] = bbox[3];
+		req.tile_size[0] = tileSize;
+		req.tile_size[1] = tileSize;
 
 		ROI roi = ROIs.createRectangleROI(bbox[0], bbox[1], bbox[2], bbox[3], null);
 		req.params.addClicks(getClicks("Positive", imageData, roi), true);
