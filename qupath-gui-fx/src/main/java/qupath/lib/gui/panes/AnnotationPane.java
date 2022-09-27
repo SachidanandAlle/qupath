@@ -4,7 +4,7 @@
  * %%
  * Copyright (C) 2014 - 2016 The Queen's University of Belfast, Northern Ireland
  * Contact: IP Management (ipmanagement@qub.ac.uk)
- * Copyright (C) 2018 - 2020 QuPath developers, The University of Edinburgh
+ * Copyright (C) 2018 - 2022 QuPath developers, The University of Edinburgh
  * %%
  * QuPath is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as
@@ -60,6 +60,7 @@ import qupath.lib.gui.QuPathGUI;
 import qupath.lib.gui.prefs.PathPrefs;
 import qupath.lib.gui.tools.GuiTools;
 import qupath.lib.gui.tools.PaneTools;
+import qupath.lib.gui.tools.PathObjectLabels;
 import qupath.lib.images.ImageData;
 import qupath.lib.objects.PathObject;
 import qupath.lib.objects.classes.PathClass;
@@ -81,7 +82,7 @@ import qupath.lib.objects.hierarchy.events.PathObjectSelectionListener;
  */
 public class AnnotationPane implements PathObjectSelectionListener, ChangeListener<ImageData<BufferedImage>>, PathObjectHierarchyListener {
 
-	private final static Logger logger = LoggerFactory.getLogger(AnnotationPane.class);
+	private static final Logger logger = LoggerFactory.getLogger(AnnotationPane.class);
 
 	private QuPathGUI qupath;
 	
@@ -173,7 +174,7 @@ public class AnnotationPane implements PathObjectSelectionListener, ChangeListen
 		listAnnotations = new ListView<>();
 		hierarchyChanged(null); // Force update
 
-		listAnnotations.setCellFactory(v -> new PathObjectListCell());
+		listAnnotations.setCellFactory(v -> PathObjectLabels.createListCell());
 
 		listAnnotations.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
 		listAnnotations.getSelectionModel().getSelectedItems().addListener(

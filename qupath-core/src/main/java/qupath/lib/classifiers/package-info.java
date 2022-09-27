@@ -1,7 +1,7 @@
 /**
  * Classes and interfaces to support machine learning classifiers.
  * <p>
- * The aim is to help  support new, custom implementations for (almost) any kind of 
- * classifier in QuPath - possibly backed by different machine learning libraries.
+ * This was the main package in QuPath v0.1.2 and earlier.
+ * Since v0.2.0, the new subpackages have been created for pixel and object classifiers.
  */
 package qupath.lib.classifiers;

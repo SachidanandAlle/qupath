@@ -4,7 +4,7 @@
  * %%
  * Copyright (C) 2014 - 2016 The Queen's University of Belfast, Northern Ireland
  * Contact: IP Management (ipmanagement@qub.ac.uk)
- * Copyright (C) 2018 - 2020 QuPath developers, The University of Edinburgh
+ * Copyright (C) 2018 - 2022 QuPath developers, The University of Edinburgh
  * %%
  * QuPath is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as
@@ -64,7 +64,6 @@ import java.util.Objects;
 import java.util.ServiceLoader;
 import java.util.Set;
 import java.util.Optional;
-import java.util.Locale.Category;
 import java.util.concurrent.ExecutorCompletionService;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -93,6 +92,7 @@ import javafx.beans.property.ReadOnlyObjectProperty;
 import javafx.beans.property.SimpleBooleanProperty;
 import javafx.beans.property.SimpleObjectProperty;
 import javafx.beans.property.SimpleStringProperty;
+import javafx.beans.value.ChangeListener;
 import javafx.collections.FXCollections;
 import javafx.collections.ListChangeListener;
 import javafx.collections.ListChangeListener.Change;
@@ -106,6 +106,7 @@ import javafx.geometry.Insets;
 import javafx.geometry.Orientation;
 import javafx.geometry.Pos;
 import javafx.geometry.Rectangle2D;
+import javafx.geometry.Side;
 import javafx.scene.Cursor;
 import javafx.scene.Node;
 import javafx.scene.Parent;
@@ -162,6 +163,7 @@ import javafx.scene.shape.Rectangle;
 import javafx.scene.text.Font;
 import javafx.stage.Screen;
 import javafx.stage.Stage;
+import javafx.stage.Window;
 import javafx.stage.WindowEvent;
 import javafx.util.Duration;
 import jfxtras.scene.menu.CirclePopupMenu;
@@ -189,12 +191,14 @@ import qupath.lib.gui.extensions.UpdateChecker.ReleaseVersion;
 import qupath.lib.gui.images.stores.DefaultImageRegionStore;
 import qupath.lib.gui.images.stores.ImageRegionStoreFactory;
 import qupath.lib.gui.logging.LogManager;
+import qupath.lib.gui.panes.ObjectDescriptionPane;
 import qupath.lib.gui.panes.AnnotationPane;
 import qupath.lib.gui.panes.ImageDetailsPane;
 import qupath.lib.gui.panes.PathObjectHierarchyView;
 import qupath.lib.gui.panes.PreferencePane;
 import qupath.lib.gui.panes.ProjectBrowser;
 import qupath.lib.gui.panes.SelectedMeasurementTableView;
+import qupath.lib.gui.panes.ServerSelector;
 import qupath.lib.gui.panes.WorkflowCommandLogView;
 import qupath.lib.gui.prefs.PathPrefs;
 import qupath.lib.gui.prefs.PathPrefs.ImageTypeSetting;
@@ -255,7 +259,7 @@ import qupath.lib.gui.scripting.DefaultScriptEditor;
  */
 public class QuPathGUI {
 	
-	private final static Logger logger = LoggerFactory.getLogger(QuPathGUI.class);
+	private static final Logger logger = LoggerFactory.getLogger(QuPathGUI.class);
 	
 	private static QuPathGUI instance;
 	
@@ -285,7 +289,7 @@ public class QuPathGUI {
 	/**
 	 * Preferred size for toolbar icons.
 	 */
-	final public static int TOOLBAR_ICON_SIZE = 16;
+	public static final int TOOLBAR_ICON_SIZE = 16;
 
 	MultiviewManager viewerManager;
 	
@@ -699,6 +703,12 @@ public class QuPathGUI {
 		public final Action SHOW_ANALYSIS_PANE = createShowAnalysisPaneAction();
 		
 		/**
+		 * Show descriptions for the selected object
+		 */
+		public final Action SHOW_OBJECT_DESCRIPTIONS = Commands.createSingleStageAction(() -> Commands.createObjectDescriptionsDialog(QuPathGUI.this));
+
+		
+		/**
 		 * Show summary measurement table for TMA cores.
 		 */
 		@ActionDescription("Show summary measurements for tissue microarray (TMA) cores")
@@ -876,7 +886,7 @@ public class QuPathGUI {
 		initializePathClasses();
 		
 		logger.trace("Time to tools: {} ms", (System.currentTimeMillis() - startTime));
-		
+				
 		// Initialize all tools
 //		initializeTools();
 
@@ -888,23 +898,7 @@ public class QuPathGUI {
 			instance = this;
 		
 		// Ensure the user is notified of any errors from now on
-		Thread.setDefaultUncaughtExceptionHandler(new UncaughtExceptionHandler() {
-			@Override
-			public void uncaughtException(Thread t, Throwable e) {
-				if (e instanceof OutOfMemoryError) {
-					// Try to reclaim any memory we can
-					getViewer().getImageRegionStore().clearCache(true, true);
-					Dialogs.showErrorNotification("Out of memory error",
-							"Out of memory! You may need to decrease the 'Number of parallel threads' in the preferences, "
-							+ "then restart QuPath.");
-					logger.error(e.getLocalizedMessage(), e);
-				} else {
-					Dialogs.showErrorNotification("QuPath exception", e);
-					if (defaultActions.SHOW_LOG != null)
-						defaultActions.SHOW_LOG.handle(null);
-				}
-			}
-		});
+		Thread.setDefaultUncaughtExceptionHandler(new QuPathUncaughtExceptionHandler());
 		
 		
 		logger.trace("Time to main component: {} ms", (System.currentTimeMillis() - startTime));
@@ -948,6 +942,15 @@ public class QuPathGUI {
 		});
 		
 		stage.setOnCloseRequest(e -> {
+			
+			// Added to try to resolve macOS issue in which pressing Cmd+Q multiple times 
+			// resulted in multiple save prompts appearing - https://github.com/qupath/qupath/issues/941
+			// Must be checked on other platforms
+			if (Platform.isNestedLoopRunning()) {
+				logger.debug("Close request from nested loop - will be discarded");
+				e.consume();
+				return;
+			}
 			
 			Set<QuPathViewer> unsavedViewers = new LinkedHashSet<>();
 			for (QuPathViewer viewer : viewerManager.getViewers()) {
@@ -1219,6 +1222,14 @@ public class QuPathGUI {
 				});
 			}
 		}
+		
+		// Refresh what we can if the locale changes
+		ChangeListener<Locale> localeListener = (v, o, n) -> updateListsAndTables();
+//		PathPrefs.defaultLocaleProperty() // Handled by update to other two
+		PathPrefs.defaultLocaleDisplayProperty().addListener(localeListener);
+		PathPrefs.defaultLocaleFormatProperty().addListener(localeListener);
+		
+		QuPathStyleManager.refresh();
 	}
 	
 	
@@ -1840,7 +1851,7 @@ public class QuPathGUI {
 	 */
 	private void initializePathClasses() {
 		availablePathClasses = FXCollections.observableArrayList();
-		List<PathClass> pathClasses = new ArrayList<>();		
+		Set<PathClass> pathClasses = new LinkedHashSet<>();		
 		try {
 			pathClasses.addAll(loadPathClasses());			
 		} catch (Exception e) {
@@ -1851,10 +1862,22 @@ public class QuPathGUI {
 		else
 			availablePathClasses.setAll(pathClasses);
 		availablePathClasses.addListener((Change<? extends PathClass> c) -> {
+			// We need a list for UI components (e.g. ListViews), but we want it to behave like a set
+			// Therefore if we find some non-unique nor null elements, correct the list as soon as possible
+			var list = c.getList();
+			var set = new LinkedHashSet<PathClass>();
+			set.add(PathClassFactory.getPathClassUnclassified());
+			set.addAll(list);
+			set.remove(null);
+			if (!(set.size() == list.size() && set.containsAll(list))) {
+				logger.info("Invalid PathClass list modification: {} will be corrected to {}", list, set);
+				Platform.runLater(() -> availablePathClasses.setAll(set));
+				return;
+			}
 			Project<?> project = getProject();
 			if (project != null) {
 				// Write the project, if necessary
-				project.setPathClasses(c.getList());
+				project.setPathClasses(set);
 //				if (project.setPathClasses(c.getList())
 //					ProjectBrowser.syncProject(project);
 			}
@@ -1900,7 +1923,7 @@ public class QuPathGUI {
 		if (bytes == null || bytes.length == 0)
 			return Collections.emptyList();
 		ByteArrayInputStream stream = new ByteArrayInputStream(bytes);
-		try (ObjectInputStream in = new ObjectInputStream(stream)) {
+		try (ObjectInputStream in = PathIO.createObjectInputStream(stream)) {
 			List<PathClass> pathClassesOriginal = (List<PathClass>)in.readObject();
 			List<PathClass> pathClasses = new ArrayList<>();
 			for (PathClass pathClass : pathClassesOriginal) {
@@ -1938,10 +1961,6 @@ public class QuPathGUI {
 			pane.setLeft(imagePane);
 		}
 
-		Map<String, Locale> localeMap = Arrays.stream(Locale.getAvailableLocales()).collect(Collectors.toMap(l -> l.getDisplayName(Locale.US), l -> l));
-		localeMap.remove("");
-		List<String> localeList = new ArrayList<>(localeMap.keySet());
-		Collections.sort(localeList);
 		
 		long maxMemoryMB = Runtime.getRuntime().maxMemory() / 1024 / 1024;
 		String maxMemoryString = String.format("Current maximum memory is %.2f GB.", maxMemoryMB/1024.0);
@@ -1973,14 +1992,7 @@ public class QuPathGUI {
 							"See the QuPath installation instructions for more details.");
 		}
 		
-		paramsSetup.addTitleParameter("Region")
-				.addEmptyParameter("Set the region for QuPath to use for displaying numbers and messages.\n" + 
-						"Note: It is *highly recommended* to keep the default (English, US) region settings.\n" +
-						"Support for regions that use different number formatting (e.g. commas as decimal marks)\n" +
-						"is still experimental, and may give unexpected results.")
-				.addChoiceParameter("localeFormatting", "Numbers & dates", Locale.getDefault(Category.FORMAT).getDisplayName(), localeList, "Choose region settings used to format numbers and dates")
-//				.addChoiceParameter("localeDisplay", "Messages", Locale.getDefault(Category.DISPLAY).getDisplayName(), localeList, "Choose region settings used for other formatting, e.g. in dialog boxes")
-				.addTitleParameter("Updates")
+		paramsSetup.addTitleParameter("Updates")
 				.addBooleanParameter("checkForUpdates", "Check for updates on startup (recommended)", PathPrefs.doAutoUpdateCheckProperty().get(), "Specify whether to automatically prompt to download the latest QuPath on startup (required internet connection)")	
 				;
 
@@ -2006,12 +2018,6 @@ public class QuPathGUI {
 		if (!result.isPresent() || !ButtonType.APPLY.equals(result.get()))
 			return false;
 		
-		Locale localeFormatting = localeMap.get(paramsSetup.getChoiceParameterValue("localeFormatting"));
-//		Locale localeDisplay = localeMap.get(paramsSetup.getChoiceParameterValue("localeDisplay"));
-		
-		PathPrefs.defaultLocaleFormatProperty().set(localeFormatting);
-//		PathPrefs.defaultLocaleDisplayProperty().set(localeDisplay);
-		
 		PathPrefs.doAutoUpdateCheckProperty().set(paramsSetup.getBooleanParameterValue("checkForUpdates"));
 		
 		if (canSetMemory && paramsSetup.containsKey("maxMemoryGB")) {
@@ -2027,18 +2033,24 @@ public class QuPathGUI {
 			}
 		}
 		
-		// Try to update display
-		if (getStage() != null && getStage().isShowing())
-			updateListsAndTables(getStage().getScene().getRoot());
-		
 		return true;
 	}
 	
+	
 	/**
 	 * Make an effort at updating all the trees, tables or lists that we can find.
-	 * 
-	 * @param parent
+	 * This is useful after a locale change.
 	 */
+	private static void updateListsAndTables() {
+		for (var window : Window.getWindows()) {
+			if (!window.isShowing())
+				continue;
+			var scene = window.getScene();
+			if (scene != null)
+				updateListsAndTables(scene.getRoot());
+		}
+	}
+	
 	private static void updateListsAndTables(final Parent parent) {
 		if (parent == null)
 			return;
@@ -3039,8 +3051,8 @@ public class QuPathGUI {
 					logger.error("Error building server: " + e.getLocalizedMessage(), e);
 				}
 			} else {
-				var selector = new ServerSelector(builders);
-				serverNew = selector.promptToSelectServer();
+				var selector = ServerSelector.createFromBuilders(builders);
+				serverNew = selector.promptToSelectImage("Open", false);
 				if (serverNew == null)
 					return false;
 			}
@@ -3442,7 +3454,71 @@ public class QuPathGUI {
 		return menuBar;
 	}
 	
+	/**
+	 * Get the action or menu item associated with an accelerator.
+	 * This is particularly useful to check whether a key combination is in use before using it 
+	 * for a new command.
+	 * 
+	 * @param combo
+	 * @return an {@link Action} or {@link MenuItem} associated with the accelerator, or null
+	 * @since v0.4.0
+	 */
+	public Object lookupAccelerator(String combo) {
+		return lookupAccelerator(KeyCombination.valueOf(combo));
+	}
 	
+	/**
+	 * Get the action or menu item associated with an key combination.
+	 * This is particularly useful to check whether a key combination is in use before using it 
+	 * for a new command.
+	 * 
+	 * @param combo
+	 * @return an {@link Action} or {@link MenuItem} associated with the accelerator, or null
+	 * @since v0.4.0
+	 */
+	public Object lookupAccelerator(KeyCombination combo) {
+		for (var action : actions) {
+			var accelerator = action.getAccelerator();
+			if (accelerator != null && Objects.equals(accelerator, combo))
+				return action;
+		}
+		
+		var menuItems = MenuTools.getFlattenedMenuItems(menuBar.getMenus(), false);
+		for (var mi : menuItems) {
+			var accelerator = mi.getAccelerator();
+			if (accelerator != null && Objects.equals(accelerator, combo)) {
+				var action = ActionTools.getActionProperty(mi);
+				return action == null ? mi : action;
+			}
+		}
+		
+		return null;
+	}
+	
+//	public Map<KeyCombination, String> getAccelerators() {
+//		
+//		var map = new HashMap<KeyCombination, String>();
+//		var menuItems = MenuTools.getFlattenedMenuItems(menuBar.getMenus(), true);
+//		for (var mi : menuItems) {
+//			var accelerator = mi.getAccelerator();
+//			if (accelerator != null)
+//				map.put(accelerator, mi.getText());
+//		}
+//		
+//		for (var action : actions) {
+//			var accelerator = action.getAccelerator();
+//			if (accelerator != null) {
+//				var text = action.getText();
+//				var existingText = map.put(accelerator, text);
+//				if (existingText != null && !Objects.equals(text, existingText) && 
+//						!existingText.contains(text)) {
+//					map.put(accelerator, text + ", " + existingText);
+//				}
+//			}
+//		}
+//		
+//		return map;
+//	}
 	
 	
 	/**
@@ -4006,43 +4082,69 @@ public class QuPathGUI {
 		 * TODO: Handle analysis pane being entirely hidden.
 		 */
 		
-		// Create annotation tab
+		// Create a tab for annotations and one for the full object hierarchy
 		var tabAnnotations = new Tab("Annotations");
-		var annotationTabImageData = Bindings.createObjectBinding(() -> {
-			return tabAnnotations.isSelected() ? imageDataProperty.get() : null;
-		}, tabAnnotations.selectedProperty(), imageDataProperty());
-		var annotationMeasurementsTable = new SelectedMeasurementTableView(annotationTabImageData).getTable();
 		SplitPane splitAnnotations = new SplitPane();
 		splitAnnotations.setOrientation(Orientation.VERTICAL);
 		var annotationPane = new AnnotationPane(this, imageDataProperty());
-		annotationPane.disableUpdatesProperty().bind(tabAnnotations.selectedProperty().not());
-		splitAnnotations.getItems().addAll(
-				annotationPane.getPane(),
-				annotationMeasurementsTable);
+		annotationPane.disableUpdatesProperty().bind(tabAnnotations.selectedProperty().not());		
+		splitAnnotations.getItems().add(annotationPane.getPane());
 		tabAnnotations.setContent(splitAnnotations);
-		analysisPanel.getTabs().add(tabAnnotations);
-//		analysisPanel.getSelectionModel().selectedItemProperty()
-
-		// Create hierarchy tab
+		analysisPanel.getTabs().add(tabAnnotations);		
+		
 		var tabHierarchy = new Tab("Hierarchy");
-		var hierarchyTabImageData = Bindings.createObjectBinding(() -> {
-			return tabHierarchy.isSelected() ? imageDataProperty.get() : null;
-		}, imageDataProperty(), tabHierarchy.selectedProperty());
 		final PathObjectHierarchyView paneHierarchy = new PathObjectHierarchyView(this, imageDataProperty());
 		paneHierarchy.disableUpdatesProperty().bind(tabHierarchy.selectedProperty().not());
 		SplitPane splitHierarchy = new SplitPane();
 		splitHierarchy.setOrientation(Orientation.VERTICAL);
-		splitHierarchy.getItems().addAll(
-				paneHierarchy.getPane(),
-				new SelectedMeasurementTableView(hierarchyTabImageData).getTable());
+		splitHierarchy.getItems().add(paneHierarchy.getPane());
 		tabHierarchy.setContent(splitHierarchy);
 		analysisPanel.getTabs().add(tabHierarchy);
 		
-		// Bind the split pane dividers to create a more consistent appearance
-		splitAnnotations.getDividers().get(0).positionProperty().bindBidirectional(
-				splitHierarchy.getDividers().get(0).positionProperty()
-				);
+		// We want to show measurements/descriptions using the same component at the bottom, 
+		// switching its location if the tabs change
+		var tabpaneObjectsShared = new TabPane();
+		var objectMeasurementsTable = new SelectedMeasurementTableView(imageDataProperty());
+		tabpaneObjectsShared.setSide(Side.BOTTOM);
+		var tabSharedTable = new Tab("Measurements", objectMeasurementsTable.getTable());
+		tabpaneObjectsShared.getTabs().add(tabSharedTable);
+		var tabSharedDescription = new Tab("Description", ObjectDescriptionPane.createPane(imageDataProperty(), true));
+		tabpaneObjectsShared.getTabs().add(tabSharedDescription);
+		tabpaneObjectsShared.setTabClosingPolicy(TabClosingPolicy.UNAVAILABLE);
 
+		// We could try to avoid updating when not visible
+//		var annotationTabImageData = Bindings.createObjectBinding(() -> {
+//			return tabAnnotations.isSelected() ? imageDataProperty.get() : null;
+//		}, tabAnnotations.selectedProperty(), imageDataProperty());
+		
+		// We need to add somewhere, otherwise the tableview was slow to update
+		splitAnnotations.getItems().add(tabpaneObjectsShared);
+		
+		analysisPanel.getSelectionModel().selectedItemProperty().addListener((v, o, n) -> {
+			// Update split locations
+			if (o == tabAnnotations)
+				splitHierarchy.setDividerPosition(0, splitAnnotations.getDividerPositions()[0]);
+			else if (o == tabHierarchy) {
+				splitAnnotations.setDividerPosition(0, splitHierarchy.getDividerPositions()[0]);				
+			}
+			
+			// Update shared pane location
+			if (n == tabHierarchy) {
+				if (splitHierarchy.getItems().size() <= 1)
+					splitHierarchy.getItems().add(tabpaneObjectsShared);
+				else
+					splitHierarchy.getItems().set(1, tabpaneObjectsShared);
+			} else if (n == tabAnnotations) {
+				if (splitAnnotations.getItems().size() <= 1)
+					splitAnnotations.getItems().add(tabpaneObjectsShared);
+				else
+					splitAnnotations.getItems().set(1, tabpaneObjectsShared);
+			}
+		});
+		
+		// Bind visibility to tab selection - this makes it possible to reduce expensive table updates
+		objectMeasurementsTable.getTable().visibleProperty().bind(tabSharedTable.selectedProperty());
+		
 		var commandLogView = new WorkflowCommandLogView(this);
 		TitledPane titledLog = new TitledPane("Command history", commandLogView.getPane());
 		titledLog.setCollapsible(false);
@@ -5089,6 +5191,53 @@ public class QuPathGUI {
 			
 		}
 		
+		
+	}
+	
+	
+	class QuPathUncaughtExceptionHandler implements UncaughtExceptionHandler {
+		
+		private long lastExceptionTimestamp = 0L;
+		private String lastExceptionMessage = null;
+		
+		private long sameExceptionCount = 0;
+		private long minDelay = 1000;
+		
+		@Override
+		public void uncaughtException(Thread t, Throwable e) {
+			// Avoid showing the same message repeatedly
+			String msg = e.getLocalizedMessage();
+			long timestamp = System.currentTimeMillis();
+			try {
+				if (timestamp - lastExceptionTimestamp < minDelay && 
+						Objects.equals(msg, lastExceptionMessage)) {
+					sameExceptionCount++;
+					// Don't continually log the full stack trace
+					if (sameExceptionCount > 3)
+						logger.error("{} (see full stack trace above, or use 'debug' log level)", e.getLocalizedMessage());
+					else
+						logger.debug(e.getLocalizedMessage(), e);
+					return;
+				} else
+					sameExceptionCount = 0;
+	
+				if (e instanceof OutOfMemoryError) {
+					// Try to reclaim any memory we can
+					getViewer().getImageRegionStore().clearCache(true, true);
+					Dialogs.showErrorNotification("Out of memory error",
+							"Out of memory! You may need to decrease the 'Number of parallel threads' in the preferences, "
+							+ "then restart QuPath.");
+					logger.error(e.getLocalizedMessage(), e);
+				} else {
+					Dialogs.showErrorNotification("QuPath exception", e);
+					if (defaultActions.SHOW_LOG != null)
+						defaultActions.SHOW_LOG.handle(null);
+				}
+			} finally {
+				lastExceptionMessage = msg;
+				lastExceptionTimestamp = timestamp;				
+			}
+		}
 		
 	}
 

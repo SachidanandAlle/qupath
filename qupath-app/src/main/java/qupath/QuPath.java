@@ -59,7 +59,6 @@ import qupath.lib.gui.logging.LogManager;
 import qupath.lib.gui.logging.LogManager.LogLevel;
 import qupath.lib.gui.prefs.PathPrefs;
 import qupath.lib.gui.scripting.DefaultScriptEditor;
-import qupath.lib.gui.scripting.languages.GroovyLanguage;
 import qupath.lib.gui.scripting.languages.RunnableLanguage;
 import qupath.lib.gui.scripting.languages.ScriptLanguage;
 import qupath.lib.gui.scripting.languages.ScriptLanguageProvider;
@@ -82,12 +81,12 @@ import qupath.lib.scripting.QP;
 @Command(name = "QuPath", subcommands = {HelpCommand.class, ScriptCommand.class, GenerateCompletion.class},
 	footer = {"",
 			"Copyright(c) The Queen's University Belfast (2014-2016)",
-			"Copyright(c) QuPath developers (2017-2021)",
-			"Copyright(c) The University of Edinburgh (2018-2021)"
+			"Copyright(c) QuPath developers (2017-2022)",
+			"Copyright(c) The University of Edinburgh (2018-2022)"
 			}, mixinStandardHelpOptions = true, versionProvider = QuPath.VersionProvider.class)
 public class QuPath {
 	
-	private final static Logger logger = LoggerFactory.getLogger(QuPath.class);
+	private static final Logger logger = LoggerFactory.getLogger(QuPath.class);
 	
 	@Parameters(arity = "0..1", description = {"Path to image or project to open"}, hidden = true)
 	private String path;
@@ -196,6 +195,25 @@ public class QuPath {
 	}
 	
 	
+	static void initializeProperties() {
+		initializeJTS();
+	}
+	
+	
+	/**
+	 * Use OverlayNG with Java Topology Suite by default.
+	 * This can greatly reduce TopologyExceptions.
+	 * Use -Djts.overlay=old to turn off this behavior.
+	 */
+	static void initializeJTS() {
+		var prop = System.getProperty("jts.overlay");
+		if (prop == null) {
+			logger.debug("Setting -Djts.overlay=ng");
+			System.setProperty("jts.overlay", "ng");
+		}
+	}
+	
+	
 	/**
 	 * Non-ASCII characters in paths can become mangled on Windows due to character encoding.
 	 * Here, make a cautious attempt to correct these if necessary, or return the path unchanged.
@@ -251,7 +269,12 @@ public class QuPath {
 		"By default, this will not save changes to any data files."})
 class ScriptCommand implements Runnable {
 	
-	final private static Logger logger = LoggerFactory.getLogger(ScriptCommand.class);
+	private static final Logger logger = LoggerFactory.getLogger(ScriptCommand.class);
+	
+	/**
+	 * Default extension for scripting (when not specified)
+	 */
+	private static final String DEFAULT_SCRIPT_EXTENSION = ".groovy";
 	
 	@Parameters(index = "0", description = "Path to the script file (.groovy).", arity = "0..1", paramLabel = "script")
 	private String scriptFile;
@@ -404,23 +427,24 @@ class ScriptCommand implements Runnable {
 		Object result = null;
 		String script = scriptCommand;
 		RunnableLanguage language;
+		
+		String ext = DEFAULT_SCRIPT_EXTENSION;
+		if (scriptFile != null)
+			ext = GeneralTools.getExtension(scriptFile).orElse(DEFAULT_SCRIPT_EXTENSION);
+		
+		ScriptLanguage scriptLanguage = ScriptLanguageProvider.getLanguageFromExtension(ext);
+		if (scriptLanguage == null || !(scriptLanguage instanceof RunnableLanguage))
+			throw new IllegalArgumentException("No runnable script language found for " + scriptFile);
+			
+		language = (RunnableLanguage)scriptLanguage;
+			
+			// Read & try to run the script
 		if (script == null) {
-			String ext = scriptFile.substring(scriptFile.lastIndexOf(".")+1);
-			ScriptLanguage scriptLanguage = ScriptLanguageProvider.getLanguageFromExtension(ext);
-			if (scriptLanguage == null || !(scriptLanguage instanceof RunnableLanguage))
-				throw new IllegalArgumentException("No script engine found for " + scriptFile);
-			
-			language = (RunnableLanguage)scriptLanguage;
-			
-			// Try to run the script
-			// Read script
 			script = GeneralTools.readFileAsString(QuPath.getEncodedPath(scriptFile));
 		} else {
 			if (GeneralTools.isWindows() && !StandardCharsets.US_ASCII.newEncoder().canEncode(script))
 				logger.warn("Non-ASCII characters detected in the specified script! If you experience encoding issues, try passing a script file instead.");
-			language = GroovyLanguage.getInstance();
 		}
-		
 		
 		// Try to make sure that the standard outputs are used
 		ScriptContext context = new SimpleScriptContext();

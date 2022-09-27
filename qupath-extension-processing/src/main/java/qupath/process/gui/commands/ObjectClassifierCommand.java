@@ -4,7 +4,7 @@
  * %%
  * Copyright (C) 2014 - 2016 The Queen's University of Belfast, Northern Ireland
  * Contact: IP Management (ipmanagement@qub.ac.uk)
- * Copyright (C) 2018 - 2020 QuPath developers, The University of Edinburgh
+ * Copyright (C) 2018 - 2022 QuPath developers, The University of Edinburgh
  * %%
  * QuPath is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as
@@ -29,6 +29,7 @@ import java.nio.IntBuffer;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -100,7 +101,6 @@ import javafx.scene.layout.Pane;
 import javafx.scene.layout.Priority;
 import javafx.stage.Stage;
 import qupath.lib.classifiers.Normalization;
-import qupath.lib.classifiers.PathClassifierTools;
 import qupath.lib.classifiers.object.ObjectClassifier;
 import qupath.lib.classifiers.object.ObjectClassifiers;
 import qupath.lib.common.GeneralTools;
@@ -144,7 +144,7 @@ import qupath.process.gui.commands.ml.ProjectClassifierBindings;
  */
 public class ObjectClassifierCommand implements Runnable {
 
-	final private static String name = "Train object classifier";
+	private static final String name = "Train object classifier";
 
 	private QuPathGUI qupath;
 
@@ -208,7 +208,7 @@ public class ObjectClassifierCommand implements Runnable {
 
 	static class ObjectClassifierPane implements ChangeListener<ImageData<BufferedImage>>, PathObjectHierarchyListener {
 
-		private final static Logger logger = LoggerFactory.getLogger(ObjectClassifierPane.class);
+		private static final Logger logger = LoggerFactory.getLogger(ObjectClassifierPane.class);
 
 		private QuPathGUI qupath;
 
@@ -640,7 +640,7 @@ public class ObjectClassifierCommand implements Runnable {
 					.stream()
 					.filter(filter)
 					.collect(Collectors.toList());
-			return PathClassifierTools.getAvailableFeatures(detections);
+			return PathObjectTools.getAvailableFeatures(detections);
 		}
 		
 
@@ -704,7 +704,9 @@ public class ObjectClassifierCommand implements Runnable {
 			for (var annotation : trainingAnnotations) {
 				var pathClass = annotation.getPathClass();
 				if (selectedClasses == null || selectedClasses.contains(pathClass)) {
-					var set = map.computeIfAbsent(pathClass, p -> new HashSet<>());
+					// Use a TreeSet ordered by ID
+					// This is to overcome https://github.com/qupath/qupath/issues/1016
+					var set = map.computeIfAbsent(pathClass, p -> new TreeSet<>(Comparator.comparing(PathObject::getId)));
 					var roi = annotation.getROI();
 					if (roi.isPoint()) {
 						for (Point2 p : annotation.getROI().getAllPoints()) {

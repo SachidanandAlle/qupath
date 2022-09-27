@@ -4,7 +4,7 @@
  * %%
  * Copyright (C) 2014 - 2016 The Queen's University of Belfast, Northern Ireland
  * Contact: IP Management (ipmanagement@qub.ac.uk)
- * Copyright (C) 2018 - 2020 QuPath developers, The University of Edinburgh
+ * Copyright (C) 2018 - 2022 QuPath developers, The University of Edinburgh
  * %%
  * QuPath is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as
@@ -71,8 +71,6 @@ import qupath.lib.analysis.heatmaps.DensityMaps;
 import qupath.lib.analysis.heatmaps.DensityMaps.DensityMapBuilder;
 import qupath.lib.analysis.images.ContourTracing;
 import qupath.lib.awt.common.BufferedImageTools;
-import qupath.lib.classifiers.PathClassifierTools;
-import qupath.lib.classifiers.PathObjectClassifier;
 import qupath.lib.classifiers.object.ObjectClassifier;
 import qupath.lib.classifiers.object.ObjectClassifiers;
 import qupath.lib.classifiers.pixel.PixelClassifier;
@@ -115,7 +113,6 @@ import qupath.lib.objects.hierarchy.PathObjectHierarchy;
 import qupath.lib.objects.hierarchy.TMAGrid;
 import qupath.lib.plugins.CommandLinePluginRunner;
 import qupath.lib.plugins.PathPlugin;
-import qupath.lib.plugins.workflow.RunSavedClassifierWorkflowStep;
 import qupath.lib.projects.Project;
 import qupath.lib.projects.ProjectIO;
 import qupath.lib.projects.ProjectImageEntry;
@@ -129,6 +126,7 @@ import qupath.lib.roi.ROIs;
 import qupath.lib.roi.RoiTools;
 import qupath.lib.roi.interfaces.ROI;
 import qupath.opencv.dnn.DnnTools;
+import qupath.opencv.io.OpenCVTypeAdapters;
 import qupath.opencv.ml.objects.OpenCVMLClassifier;
 import qupath.opencv.ml.objects.features.FeatureExtractors;
 import qupath.opencv.ml.pixel.PixelClassifierTools;
@@ -156,32 +154,32 @@ import qupath.opencv.tools.OpenCVTools;
  */
 public class QP {
 	
-	final private static Logger logger = LoggerFactory.getLogger(QP.class);
+	private static final Logger logger = LoggerFactory.getLogger(QP.class);
 	
 	/**
 	 * Brightfield image type with hematoxylin and DAB staining
 	 */
-	final public static ImageData.ImageType BRIGHTFIELD_H_DAB = ImageData.ImageType.BRIGHTFIELD_H_DAB;
+	public static final ImageData.ImageType BRIGHTFIELD_H_DAB = ImageData.ImageType.BRIGHTFIELD_H_DAB;
 	
 	/**
 	 * Brightfield image type with hematoxylin and eosin staining
 	 */
-	final public static ImageData.ImageType BRIGHTFIELD_H_E = ImageData.ImageType.BRIGHTFIELD_H_E;
+	public static final ImageData.ImageType BRIGHTFIELD_H_E = ImageData.ImageType.BRIGHTFIELD_H_E;
 	
 	/**
 	 * Brightfield image type
 	 */
-	final public static ImageData.ImageType BRIGHTFIELD_OTHER = ImageData.ImageType.BRIGHTFIELD_OTHER;
+	public static final ImageData.ImageType BRIGHTFIELD_OTHER = ImageData.ImageType.BRIGHTFIELD_OTHER;
 	
 	/**
 	 * Fluorescence image type
 	 */
-	final public static ImageData.ImageType FLUORESCENCE = ImageData.ImageType.FLUORESCENCE;
+	public static final ImageData.ImageType FLUORESCENCE = ImageData.ImageType.FLUORESCENCE;
 	
 	/**
 	 * Any other image type (neither brightfield nor fluorescence)
 	 */
-	final public static ImageData.ImageType OTHER = ImageData.ImageType.OTHER;
+	public static final ImageData.ImageType OTHER = ImageData.ImageType.OTHER;
 	
 	/**
 	 * Store ImageData accessible to the script thread
@@ -200,7 +198,7 @@ public class QP {
 	 *   var path = buildFilePath(PROJECT_BASE_DIR, 'subdir', 'name.txt')
 	 * </pre>
 	 */
-	final public static String PROJECT_BASE_DIR = "{%PROJECT}";
+	public static final String PROJECT_BASE_DIR = "{%PROJECT}";
 	
 	
 	/**
@@ -216,6 +214,7 @@ public class QP {
 			.registerTypeAdapterFactory(PixelClassifiers.getTypeAdapterFactory())
 			.registerTypeAdapterFactory(FeatureExtractors.getTypeAdapterFactory())
 			.registerTypeAdapterFactory(ObjectClassifiers.getTypeAdapterFactory())
+			.registerTypeAdapterFactory(OpenCVTypeAdapters.getOpenCVTypeAdaptorFactory())
 			.registerTypeAdapter(ColorTransforms.ColorTransform.class, new ColorTransforms.ColorTransformTypeAdapter());
 		
 		// Currently, the type adapters are registered within the class... so we need to initialize the class
@@ -233,7 +232,7 @@ public class QP {
 	}
 
 	
-	private final static Set<Class<?>> CORE_CLASSES = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
+	private static final Set<Class<?>> CORE_CLASSES = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
 			// Core datastructures
 			ImageData.class,
 			ImageServer.class,
@@ -259,7 +258,6 @@ public class QP {
 			RoiTools.class,
 			GsonTools.class,
 			BufferedImageTools.class,
-			PathClassifierTools.class,
 			ColorTools.class,
 			GeneralTools.class,
 			DistanceTools.class,
@@ -746,6 +744,24 @@ public class QP {
 	}
 	
 	/**
+	 * Get the name of the current image.
+	 * This first checks the name associated with {@link #getProjectEntry()}, if available.
+	 * If no name is found (e.g. because no project is in use, then the name is extracted 
+	 * from the metadata of {@link #getCurrentServer()}.
+	 * If this is also missing, then {@code null} is returned.
+	 * @return
+	 */
+	public static String getCurrentImageName() {
+		var entry = getProjectEntry();
+		if (entry != null && !entry.getImageName().isBlank())
+			return entry.getImageName();
+		var server = getCurrentServer();
+		if (server != null)
+			return server.getMetadata().getName();
+		return null;
+	}
+	
+	/**
 	 * Get the selected objects within the current {@code PathObjectHierarchy}.
 	 * <p>
 	 * Note: this implementation returns the selected objects directly.  The returned collection 
@@ -1204,8 +1220,8 @@ public class QP {
 	/**
 	 * Run the specified plugin on the current {@code ImageData}.
 	 * 
-	 * @param className
-	 * @param args
+	 * @param className the full Java class name for the plugin
+	 * @param args any arguments required by the plugin (usually a JSON-encoded map)
 	 * @return
 	 * @throws InterruptedException
 	 * 
@@ -1222,9 +1238,9 @@ public class QP {
 	/**
 	 * Run the specified plugin on the specified {@code ImageData}.
 	 * 
-	 * @param className
-	 * @param imageData
-	 * @param args
+	 * @param className the full Java class name for the plugin
+	 * @param imageData the ImageData to which the plugin should be applied
+	 * @param args any arguments required by the plugin (usually a JSON-encoded map)
 	 * @return
 	 * @throws InterruptedException
 	 */
@@ -1242,6 +1258,88 @@ public class QP {
 			logger.error("Unable to run plugin " + className, e);
 			return false;
 		}
+	}
+	
+	/**
+	 * Run the specified plugin on the current {@code ImageData}, using a map for arguments.
+	 * 
+	 * @param className the full Java class name for the plugin
+	 * @param args the arguments
+	 * @return
+	 * @throws InterruptedException
+	 * 
+	 * @see #getCurrentImageData
+	 * 
+	 * @since v0.4.0
+	 * @implNote this is currently a convenience method that converts the arguments to a JSON-encoded string and calls 
+	 *           {@link #runPlugin(String, String)}
+	 */
+	public static boolean runPlugin(final String className, final Map<String, ?> args) throws InterruptedException {
+		var json = args == null ? "" : GsonTools.getInstance().toJson(args);
+		return runPlugin(className, json);
+	}
+	
+	/**
+	 * Run the specified plugin on the specified {@code ImageData}, using a map for arguments.
+	 * 
+	 * @param className the full Java class name for the plugin
+	 * @param imageData the ImageData to which the plugin should be applied
+	 * @param args the arguments
+	 * @return
+	 * @throws InterruptedException
+	 * 
+	 * @since v0.4.0
+	 * @implNote this is currently a convenience method that converts the arguments to a JSON-encoded string and calls 
+	 *           {@link #runPlugin(String, ImageData, String)}
+	 */
+	public static boolean runPlugin(final String className, final ImageData<?> imageData, final Map<String, ?> args) throws InterruptedException {
+		var json = args == null ? "" : GsonTools.getInstance().toJson(args);
+		return runPlugin(className, imageData, json);
+	}
+	
+	/**
+	 * Run the specified plugin on the current {@code ImageData}, with Groovy keyword argument support.
+	 * <p>
+	 * This reason is that this Groovy supports keyword arguments, but only if a {@link Map} is the first argument to a method.
+	 * This therefore makes it possible to change only non-default arguments with a call like this:
+	 * <pre><code>
+	 * runPlugin('qupath.imagej.detect.cells.WatershedCellDetection', cellExpansionMicrons: 3, detectionImage: "DAPI", threshold: 1.0)
+	 * </code></pre>
+	 * It is not even essential to provide the required {@code className} in the first position.
+	 * 
+	 * @param className the full Java class name for the plugin
+	 * @param args the arguments
+	 * @return
+	 * @throws InterruptedException
+	 * 
+	 * @since v0.4.0
+	 * @implNote this calls {@link #runPlugin(String, Map)}
+	 */
+	public static boolean runPlugin(final Map<String, ?> args, final String className) throws InterruptedException {
+		return runPlugin(className, args);
+	}
+
+	/**
+	 * Run the specified plugin on the specified {@code ImageData}, with Groovy keyword argument support.
+	 * <p>
+	 * This reason is that this Groovy supports keyword arguments, but only if a {@link Map} is the first argument to a method.
+	 * This therefore makes it possible to change only non-default arguments with a call like this:
+	 * <pre><code>
+	 * runPlugin('qupath.imagej.detect.cells.WatershedCellDetection', imageData, cellExpansionMicrons: 3, detectionImage: "DAPI", threshold: 1.0)
+	 * </code></pre>
+	 * It is not even essential to provide the required {@code className} in the first position.
+	 * 
+	 * @param className the full Java class name for the plugin
+	 * @param args the arguments
+	 * @param imageData 
+	 * @return
+	 * @throws InterruptedException
+	 * 
+	 * @since v0.4.0
+	 * @implNote this calls {@link #runPlugin(String, ImageData, Map)}
+	 */
+	public static boolean runPlugin(final Map<String, ?> args, final String className, final ImageData<?> imageData) throws InterruptedException {
+		return runPlugin(className, imageData, args);
 	}
 	
 	
@@ -1402,49 +1500,6 @@ public class QP {
 		ColorDeconvolutionStains stains = ColorDeconvolutionStains.parseColorDeconvolutionStainsArg(arg);
 		imageData.setColorDeconvolutionStains(stains);
 		return true;
-	}
-	
-	
-	/**
-	 * Run an detection object classifier for the specified image data
-	 * @param imageData
-	 * @param classifier
-	 */
-	@Deprecated
-	public static void runClassifier(final ImageData<?> imageData, final PathObjectClassifier classifier) {
-		if (imageData != null)
-			runClassifier(imageData.getHierarchy(), classifier);
-	}
-	
-	/**
-	 * Run a detection object classifier for the specified image hierarchy
-	 * @param hierarchy
-	 * @param classifier
-	 */
-	@Deprecated
-	public static void runClassifier(final PathObjectHierarchy hierarchy, final PathObjectClassifier classifier) {
-		logger.warn("runClassifier() is a legacy command for 'old' detection classifiers in QuPath v0.1.2 and earlier, and may be removed in a future version");
-		PathClassifierTools.runClassifier(hierarchy, classifier);
-	}
-	
-	/**
-	 * Run a detection object classifier for the current image data, reading the classifier from a specified path
-	 * @param path
-	 */
-	@Deprecated
-	public static void runClassifier(final String path) {
-		ImageData<?> imageData = getCurrentImageData();
-		if (imageData == null)
-			return;
-		PathObjectClassifier classifier = PathClassifierTools.loadClassifier(new File(path));
-		if (classifier == null) {
-			logger.error("Could not load classifier from {}", path);
-			return;
-		}
-		runClassifier(imageData, classifier);
-		
-		// Log the step
-		imageData.getHistoryWorkflow().addStep(new RunSavedClassifierWorkflowStep(path));
 	}
 	
 	
@@ -2513,7 +2568,7 @@ public class QP {
 	 * @param thresholds either 1 or 3 thresholds, depending upon whether objects should be classified as Positive/Negative or Negative/1+/2+/3+
 	 */
 	public static void setIntensityClassifications(final Collection<? extends PathObject> pathObjects, final String measurementName, final double... thresholds) {
-		PathClassifierTools.setIntensityClassifications(pathObjects, measurementName, thresholds);
+		PathObjectTools.setIntensityClassifications(pathObjects, measurementName, thresholds);
 	}
 	
 	/**
@@ -2753,9 +2808,11 @@ public class QP {
 	/**
 	 * Compute the distance for all detection object centroids to the closest annotation with each valid, not-ignored classification and add 
 	 * the result to the detection measurement list.
+	 * If the centroid falls inside an annotation, the distance is zero.
 	 * @param imageData
 	 * @param splitClassNames 
 	 * @see DistanceTools#detectionToAnnotationDistances(ImageData, boolean)
+	 * @see QP#detectionToAnnotationDistancesSigned(ImageData, boolean)
 	 */
 	public static void detectionToAnnotationDistances(ImageData<?> imageData, boolean splitClassNames) {
 		DistanceTools.detectionToAnnotationDistances(imageData, splitClassNames);
@@ -2776,11 +2833,40 @@ public class QP {
 	/**
 	 * Compute the distance for all detection object centroids to the closest annotation with each valid, not-ignored classification and add 
 	 * the result to the detection measurement list for the current ImageData.
+	 * If the centroid falls inside an annotation, the distance is zero.
 	 * @param splitClassNames 
 	 * @see DistanceTools#detectionToAnnotationDistances(ImageData, boolean)
+	 * @see QP#detectionToAnnotationDistancesSigned(boolean)
 	 */
 	public static void detectionToAnnotationDistances(boolean splitClassNames) {
 		detectionToAnnotationDistances(getCurrentImageData(), splitClassNames);
+	}
+	
+	/**
+	 * Compute the signed distance for all detection object centroids to the closest annotation with each valid, not-ignored classification and add 
+	 * the result to the detection measurement list.
+	 * If the centroid falls inside an annotation, the negative distance to the annotation boundary is used.
+	 * @param imageData
+	 * @param splitClassNames 
+	 * @see DistanceTools#detectionToAnnotationDistancesSigned(ImageData, boolean)
+	 * @see QP#detectionToAnnotationDistances(ImageData, boolean)
+	 * @since v0.4.0
+	 */
+	public static void detectionToAnnotationDistancesSigned(ImageData<?> imageData, boolean splitClassNames) {
+		DistanceTools.detectionToAnnotationDistancesSigned(imageData, splitClassNames);
+	}
+	
+	/**
+	 * Compute the signed distance for all detection object centroids to the closest annotation with each valid, not-ignored classification and add 
+	 * the result to the detection measurement list for the current ImageData.
+	 * If the centroid falls inside an annotation, the negative distance to the annotation boundary is used.
+	 * @param splitClassNames 
+	 * @see DistanceTools#detectionToAnnotationDistancesSigned(ImageData, boolean)
+	 * @see QP#detectionToAnnotationDistances(boolean)
+	 * @since v0.4.0
+	 */
+	public static void detectionToAnnotationDistancesSigned(boolean splitClassNames) {
+		detectionToAnnotationDistancesSigned(getCurrentImageData(), splitClassNames);
 	}
 
 	/**

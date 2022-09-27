@@ -2,7 +2,7 @@
  * #%L
  * This file is part of QuPath.
  * %%
- * Copyright (C) 2018 - 2020 QuPath developers, The University of Edinburgh
+ * Copyright (C) 2018 - 2022 QuPath developers, The University of Edinburgh
  * %%
  * QuPath is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as
@@ -37,6 +37,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.function.Function;
@@ -68,6 +69,7 @@ import javafx.scene.Scene;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.control.Button;
+import javafx.scene.control.ButtonType;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.CheckMenuItem;
 import javafx.scene.control.ColorPicker;
@@ -90,9 +92,13 @@ import javafx.scene.image.Image;
 import javafx.scene.image.WritableImage;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
+import javafx.scene.layout.ColumnConstraints;
 import javafx.scene.layout.GridPane;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
 import javafx.scene.robot.Robot;
+import javafx.stage.Modality;
 import javafx.stage.Screen;
 import javafx.stage.Stage;
 import javafx.stage.Window;
@@ -181,7 +187,7 @@ public class GuiTools {
 		FULL_SCREENSHOT
 	}
 
-	private final static Logger logger = LoggerFactory.getLogger(GuiTools.class);
+	private static final Logger logger = LoggerFactory.getLogger(GuiTools.class);
 
 	/**
 	 * Open the directory containing a file for browsing.
@@ -720,6 +726,7 @@ public class GuiTools {
 	 * 
 	 * @param textField
 	 * @param allowDecimals
+	 * @implNote this is often used alongside {@link #resetSpinnerNullToPrevious(Spinner)}
 	 */
 	public static void restrictTextFieldInputToNumber(TextField textField, boolean allowDecimals) {
 		NumberFormat format;
@@ -748,8 +755,14 @@ public class GuiTools {
 		    			newText.toUpperCase().contains("E"))
 		    		return c;
 		    	
-		    	// Accept any deletion of characters (which means the text area might be left in an invalid state)
-		    	if (newText.length() < text.length())
+//		    	// Accept any deletion of characters (which means the text area might be left in an invalid state)
+		    	// Note: This was removed, because it could result in errors if selecting a longer number 
+		    	// and replacing it with an invalid character in a single edit (e.g. '=')
+//		    	if (newText.length() < text.length())
+//		    		return c;
+		    	
+		    	// Accept removing everything (which means the text area might be left in an invalid state)
+		    	if (newText.isEmpty())
 		    		return c;
 
 		        ParsePosition parsePosition = new ParsePosition(0);
@@ -762,6 +775,25 @@ public class GuiTools {
 		};
 		TextFormatter<Integer> normalizeFormatter = new TextFormatter<Integer>(filter);
 		textField.setTextFormatter(normalizeFormatter);
+	}
+	
+	/**
+	 * Add a listener to the value of a spinner, resetting it to its previous value if it 
+	 * becomes null.
+	 * @param <T>
+	 * @param spinner
+	 * @implNote this is often used alongside {@link #restrictTextFieldInputToNumber(TextField, boolean)}
+	 */
+	public static <T> void resetSpinnerNullToPrevious(Spinner<T> spinner) {
+		spinner.valueProperty().addListener((v, o, n) -> {
+			try {
+				if (n == null) {
+					spinner.getValueFactory().setValue(o);
+				}
+			} catch (Exception e) {
+				logger.warn(e.getLocalizedMessage(), e);
+			}
+		});
 	}
 	
 
@@ -824,9 +856,11 @@ public class GuiTools {
 		
 		Label labDescription = new Label("Description");
 		TextArea textAreaDescription = new TextArea(annotation.getDescription());
-		textAreaDescription.setPrefRowCount(3);
-		textAreaDescription.setPrefColumnCount(25);
+		textAreaDescription.setPrefRowCount(8);
+		textAreaDescription.setPrefColumnCount(40);
 		labDescription.setLabelFor(textAreaDescription);
+		textAreaDescription.setStyle("-fx-font-family: monospaced;");
+		textAreaDescription.setWrapText(true);
 		panel.add(labDescription, 0, 2);
 		panel.add(textAreaDescription, 1, 2);
 		
@@ -849,9 +883,34 @@ public class GuiTools {
 			panel.add(cbAll, 1, 4);
 		}
 		
-
-		if (!Dialogs.showConfirmDialog("Set annotation properties", panel))
+		PaneTools.setToExpandGridPaneWidth(textField, colorPicker, textAreaDescription, cbLocked, cbAll);
+//		PaneTools.setHGrowPriority(Priority.NEVER, labDescription);
+		PaneTools.setHGrowPriority(Priority.ALWAYS, colorPicker, textAreaDescription, cbLocked, cbAll);
+		PaneTools.setVGrowPriority(Priority.NEVER, colorPicker);
+		PaneTools.setToExpandGridPaneHeight(textAreaDescription);
+		
+		panel.getColumnConstraints().setAll(
+				new ColumnConstraints(Region.USE_COMPUTED_SIZE),
+				new ColumnConstraints(00, 400, Double.MAX_VALUE)
+				);
+				
+		var dialog = Dialogs.builder()
+			.title("Set annotation properties")
+			.content(panel)
+			.modality(Modality.APPLICATION_MODAL)
+			.buttons(ButtonType.APPLY, ButtonType.CANCEL)
+			.resizable()
+			.build();
+		
+//		dialog.getDialogPane().setMinSize(400, 400);
+			
+		var response = dialog.showAndWait();
+		
+		if (!Objects.equals(ButtonType.APPLY, response.orElse(ButtonType.CANCEL)))
 			return false;
+		
+//		if (!Dialogs.showMessageDialog("Set annotation properties", panel))
+//			return false;
 		
 		List<PathAnnotationObject> toChange = new ArrayList<>();
 		toChange.add(annotation);
@@ -908,8 +967,8 @@ public class GuiTools {
 		// Add annotation options
 		CheckMenuItem miLockAnnotations = new CheckMenuItem("Lock");
 		CheckMenuItem miUnlockAnnotations = new CheckMenuItem("Unlock");
-		miLockAnnotations.setOnAction(e -> setSelectedAnnotationLock(qupath.getImageData(), true));
-		miUnlockAnnotations.setOnAction(e -> setSelectedAnnotationLock(qupath.getImageData(), false));
+		miLockAnnotations.setOnAction(e -> setSelectedAnnotationsLocked(qupath.getImageData(), true));
+		miUnlockAnnotations.setOnAction(e -> setSelectedAnnotationsLocked(qupath.getImageData(), false));
 		
 		MenuItem miSetProperties = new MenuItem("Set properties");
 		miSetProperties.setOnAction(e -> {
@@ -1007,40 +1066,20 @@ public class GuiTools {
 				);
 	}
 	
-	/**
-	 * Set selected TMA cores to have the specified 'locked' status.
-	 * 
-	 * @param hierarchy
-	 * @param setToLocked
-	 */
-	private static void setSelectedAnnotationLock(final PathObjectHierarchy hierarchy, final boolean setToLocked) {
-		if (hierarchy == null)
-			return;
-		PathObject pathObject = hierarchy.getSelectionModel().getSelectedObject();
-		List<PathObject> changed = new ArrayList<>();
-		if (pathObject instanceof PathAnnotationObject) {
-			PathAnnotationObject annotation = (PathAnnotationObject)pathObject;
-			annotation.setLocked(setToLocked);
-			changed.add(annotation);
-			// Update any other selected cores to have the same status
-			for (PathObject pathObject2 : hierarchy.getSelectionModel().getSelectedObjects()) {
-				if (pathObject2 instanceof PathAnnotationObject) {
-					annotation = (PathAnnotationObject)pathObject2;
-					if (annotation.isLocked() != setToLocked) {
-						annotation.setLocked(setToLocked);
-						changed.add(annotation);
-					}
-				}
-			}
-		}
-		if (!changed.isEmpty())
-			hierarchy.fireObjectsChangedEvent(GuiTools.class, changed);
-	}
 	
-	private static void setSelectedAnnotationLock(final ImageData<?> imageData, final boolean setToLocked) {
+	private static void setSelectedAnnotationsLocked(final ImageData<?> imageData, final boolean setToLocked) {
 		if (imageData == null)
 			return;
-		setSelectedAnnotationLock(imageData.getHierarchy(), setToLocked);
+		var selectedAnnotations = imageData.getHierarchy()
+				.getSelectionModel()
+				.getSelectedObjects()
+				.stream()
+				.filter(p -> p.isAnnotation())
+				.collect(Collectors.toList());
+		if (setToLocked)
+			PathObjectTools.lockObjects(imageData.getHierarchy(), selectedAnnotations);
+		else
+			PathObjectTools.unlockObjects(imageData.getHierarchy(), selectedAnnotations);			
 	}
 	
 	
@@ -1334,7 +1373,7 @@ public class GuiTools {
 
 	
 	
-	private final static String KEY_REGIONS = "processRegions";
+	private static final String KEY_REGIONS = "processRegions";
 	
 	/**
 	 * Get the parent objects to use when running the plugin, or null if no suitable parent objects are found.

@@ -45,11 +45,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import qupath.lib.analysis.stats.RunningStatistics;
-import qupath.lib.classifiers.PathClassifierTools;
 import qupath.lib.measurements.MeasurementList;
 import qupath.lib.objects.PathCellObject;
 import qupath.lib.objects.PathObject;
 import qupath.lib.objects.PathObjectConnectionGroup;
+import qupath.lib.objects.PathObjectTools;
 import qupath.lib.objects.classes.PathClass;
 import qupath.lib.roi.interfaces.ROI;
 
@@ -62,7 +62,7 @@ import qupath.lib.roi.interfaces.ROI;
  */
 public class DelaunayTriangulation implements PathObjectConnectionGroup {
 	
-	private final static Logger logger = LoggerFactory.getLogger(DelaunayTriangulation.class);
+	private static final Logger logger = LoggerFactory.getLogger(DelaunayTriangulation.class);
 	
 	private double distanceThreshold = Double.NaN;
 	private boolean limitByClass = false;
@@ -85,7 +85,7 @@ public class DelaunayTriangulation implements PathObjectConnectionGroup {
 		this.limitByClass = limitByClass;
 		computeDelaunay(pathObjects, pixelWidth, pixelHeight);
 		
-		Collection<String> measurements = PathClassifierTools.getAvailableFeatures(pathObjects);
+		Collection<String> measurements = PathObjectTools.getAvailableFeatures(pathObjects);
 		for (String name : measurements) {
 			RunningStatistics stats = new RunningStatistics();
 			pathObjects.stream().forEach(p -> stats.addValue(p.getMeasurementList().getMeasurementValue(name)));
@@ -167,11 +167,11 @@ public class DelaunayTriangulation implements PathObjectConnectionGroup {
 			}
 			if (x < minX)
 				minX = x;
-			else if (x > maxX)
+			if (x > maxX)
 				maxX = x;
 			if (y < minY)
 				minY = y;
-			else if (y > maxY)
+			if (y > maxY)
 				maxY = y;
 			
 			centroids.add(new Point2f((float)x, (float)y));
@@ -432,7 +432,7 @@ public class DelaunayTriangulation implements PathObjectConnectionGroup {
 		
 		String key = "Cluster ";
 		List<String> measurementNames = new ArrayList<>();
-		for (String s : PathClassifierTools.getAvailableFeatures(nodeMap.keySet())) {
+		for (String s : PathObjectTools.getAvailableFeatures(nodeMap.keySet())) {
 			if (!s.startsWith(key))
 				measurementNames.add(s);
 		}

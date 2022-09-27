@@ -22,6 +22,7 @@
 package qupath.lib.images.writers;
 
 import java.awt.image.BufferedImage;
+import java.awt.image.IndexColorModel;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -69,7 +70,7 @@ import qupath.lib.roi.RoiTools;
  */
 public class TileExporter  {
 
-	private final static Logger logger = LoggerFactory.getLogger(TileExporter.class);
+	private static final Logger logger = LoggerFactory.getLogger(TileExporter.class);
 
 	private ImageData<BufferedImage> imageData;
 	private ImageServer<BufferedImage> server;
@@ -867,7 +868,12 @@ public class TileExporter  {
 			}
 			img = cropOrPad(img, width, height, xProp, yProp);
 		}
-		return BufferedImageTools.resize(img, width, height, true);
+		// if image is a label map, use nearest neighbors interpolation to ensure that no new values (outside the labels) are created
+		boolean smoothInterpolate = true;
+		if ((img.getColorModel() instanceof IndexColorModel) || (server instanceof LabeledImageServer)) {
+			smoothInterpolate = false;
+		}
+		return BufferedImageTools.resize(img, width, height, smoothInterpolate);
 	}
 	
 	

@@ -92,7 +92,6 @@ import javafx.util.Callback;
 import qupath.imagej.gui.IJExtension;
 import qupath.imagej.tools.IJTools;
 import qupath.lib.classifiers.Normalization;
-import qupath.lib.classifiers.PathClassifierTools;
 import qupath.lib.classifiers.pixel.PixelClassifier;
 import qupath.lib.classifiers.pixel.PixelClassifierMetadata;
 import qupath.lib.common.GeneralTools;
@@ -111,6 +110,7 @@ import qupath.lib.images.ImageData;
 import qupath.lib.images.servers.ImageServer;
 import qupath.lib.images.servers.ImageServerMetadata;
 import qupath.lib.images.servers.PixelCalibration;
+import qupath.lib.images.servers.ServerTools;
 import qupath.lib.images.servers.ImageServerMetadata.ChannelType;
 import qupath.lib.objects.classes.PathClass;
 import qupath.lib.objects.hierarchy.events.PathObjectHierarchyEvent;
@@ -136,7 +136,7 @@ import qupath.process.gui.commands.ml.PixelClassifierTraining.ClassifierTraining
  */
 public class PixelClassifierPane {
 	
-	final static Logger logger = LoggerFactory.getLogger(PixelClassifierPane.class);
+	private static final Logger logger = LoggerFactory.getLogger(PixelClassifierPane.class);
 	
 	private static ObservableList<ImageDataTransformerBuilder> defaultFeatureCalculatorBuilders = FXCollections.observableArrayList();
 	
@@ -429,7 +429,7 @@ public class PixelClassifierPane {
 		PaneTools.setHGrowPriority(Priority.ALWAYS, comboResolutions, comboClassifier, comboFeatures);
 		PaneTools.setFillWidth(Boolean.TRUE, comboResolutions, comboClassifier, comboFeatures);
 		
-		miniViewer = new MiniViewers.MiniViewerManager(qupath.getViewer(), 0);
+		miniViewer = MiniViewers.createManager(qupath.getViewer());
 		var viewerPane = miniViewer.getPane();
 		Tooltip.install(viewerPane, new Tooltip("View image at classification resolution"));
 		
@@ -485,11 +485,14 @@ public class PixelClassifierPane {
 		spinFeatureMin.disableProperty().bind(featureDisableBinding);
 		spinFeatureMin.setEditable(true);
 		GuiTools.restrictTextFieldInputToNumber(spinFeatureMin.getEditor(), true);
+		GuiTools.resetSpinnerNullToPrevious(spinFeatureMin);
+		
 		spinFeatureMax.disableProperty().bind(featureDisableBinding);
 		spinFeatureMax.setEditable(true);
 		GuiTools.restrictTextFieldInputToNumber(spinFeatureMax.getEditor(), true);
-		var paneFeatures = new GridPane();
-		comboDisplayFeatures.setTooltip(new Tooltip("Choose classification result or feature overlay to display (Warning: This requires a lot of memory & computation!)"));
+		GuiTools.resetSpinnerNullToPrevious(spinFeatureMax);
+		
+		var paneFeatures = new GridPane();spinFeatureMax.setTooltip(new Tooltip("Choose classification result or feature overlay to display (Warning: This requires a lot of memory & computation!)"));
 		spinFeatureMin.setTooltip(new Tooltip("Min display value for feature overlay"));
 		spinFeatureMax.setTooltip(new Tooltip("Max display value for feature overlay"));
 		sliderFeatureOpacity.setTooltip(new Tooltip("Adjust classification/feature overlay opacity"));
@@ -666,7 +669,7 @@ public class PixelClassifierPane {
 	 * 
 	 * @return true if the builder was added, false otherwise.
 	 */
-	public synchronized static boolean installDefaultFeatureClassificationBuilder(ImageDataTransformerBuilder builder) {
+	public static synchronized boolean installDefaultFeatureClassificationBuilder(ImageDataTransformerBuilder builder) {
 		if (!defaultFeatureCalculatorBuilders.contains(builder)) {
 			defaultFeatureCalculatorBuilders.add(builder);
 			return true;
@@ -812,7 +815,7 @@ public class PixelClassifierPane {
 	
 	
 	private void updateFeatureDisplayRange() {
-		if (featureRenderer == null)
+		if (featureRenderer == null || spinFeatureMin.getValue() == null || spinFeatureMax.getValue() == null)
 			return;
 		featureRenderer.setRange(spinFeatureMin.getValue(), spinFeatureMax.getValue());
 		qupath.repaintViewers();
@@ -1067,7 +1070,7 @@ public class PixelClassifierPane {
 			 if (previous != null)
 				 logger.warn("Duplicate label found! {} matches with {} and {}, only the latter be used", entry.getValue(), previous, entry.getKey());
 		 }
-		 var channels = PathClassifierTools.classificationLabelsToChannels(labels2, true);
+		 var channels = ServerTools.classificationLabelsToChannels(labels2, true);
 		 
 		 PixelClassifierMetadata metadata = new PixelClassifierMetadata.Builder()
 				 .inputResolution(cal)

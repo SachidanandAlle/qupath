@@ -64,7 +64,6 @@ import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.Pane;
 import javafx.scene.layout.Priority;
-import javafx.scene.layout.StackPane;
 import javafx.scene.text.TextAlignment;
 import javafx.stage.Modality;
 import javafx.stage.Screen;
@@ -78,6 +77,7 @@ import qupath.lib.gui.dialogs.Dialogs;
 import qupath.lib.gui.dialogs.Dialogs.DialogButton;
 import qupath.lib.gui.images.servers.RenderedImageServer;
 import qupath.lib.gui.panes.MeasurementMapPane;
+import qupath.lib.gui.panes.ObjectDescriptionPane;
 import qupath.lib.gui.panes.PathClassPane;
 import qupath.lib.gui.panes.WorkflowCommandLogView;
 import qupath.lib.gui.prefs.PathPrefs;
@@ -704,6 +704,17 @@ public class Commands {
 	}
 	
 	
+	
+	/**
+	 * Create a stage to display object descriptions.
+	 * @param qupath
+	 * @return 
+	 */
+	public static Stage createObjectDescriptionsDialog(QuPathGUI qupath) {
+		return ObjectDescriptionPane.createWindow(qupath);
+	}
+	
+	
 	/**
 	 * Prompt to save the specified {@link ImageData}.
 	 * @param qupath
@@ -1179,9 +1190,10 @@ public class Commands {
 	/**
 	 * Compute the distance between all detections and the closest annotation, for all annotation classifications.
 	 * @param imageData the image data to process
+	 * @param signedDistances if true, use signed distances
 	 */
-	public static void distanceToAnnotations2D(ImageData<?> imageData) {
-		String title = "Distance to annotations 2D";
+	public static void distanceToAnnotations2D(ImageData<?> imageData, boolean signedDistances) {
+		String title = signedDistances ? "Signed distance to annotations 2D" : "Distance to annotations 2D";
 		if (imageData == null) {
 			Dialogs.showNoImageError(title);
 			return;
@@ -1195,6 +1207,7 @@ public class Commands {
 				return;
 			}
 		}
+		
 		var result = Dialogs.showYesNoCancelDialog(title, "Split multi-part classifications?\nIf yes, each component of classifications such as \"Class1: Class2\" will be treated separately.");
 		boolean doSplit = false;
 		if (result == DialogButton.YES)
@@ -1202,11 +1215,17 @@ public class Commands {
 		else if (result != DialogButton.NO)
 			return;
 
-		
-		DistanceTools.detectionToAnnotationDistances(imageData, doSplit);
-		imageData.getHistoryWorkflow().addStep(new DefaultScriptableWorkflowStep(
-				"Distance to annotations 2D",
-				doSplit ? "detectionToAnnotationDistances(true)" : "detectionToAnnotationDistances(false)"));
+		if (signedDistances) {
+			DistanceTools.detectionToAnnotationDistancesSigned(imageData, doSplit);
+			imageData.getHistoryWorkflow().addStep(new DefaultScriptableWorkflowStep(
+					"Signed distance to annotations 2D",
+					doSplit ? "detectionToAnnotationDistancesSigned(true)" : "detectionToAnnotationDistancesSigned(false)"));
+		} else {
+			DistanceTools.detectionToAnnotationDistances(imageData, doSplit);
+			imageData.getHistoryWorkflow().addStep(new DefaultScriptableWorkflowStep(
+					"Distance to annotations 2D",
+					doSplit ? "detectionToAnnotationDistances(true)" : "detectionToAnnotationDistances(false)"));
+		}
 	}
 	
 	/**
@@ -1669,6 +1688,7 @@ public class Commands {
 		MiniViewers.createDialog(viewer, false).show();
 	}
 
+	
 	/**
 	 * Show a channel viewer window associated with a specific viewer.
 	 * @param viewer the viewer with which to associate this window

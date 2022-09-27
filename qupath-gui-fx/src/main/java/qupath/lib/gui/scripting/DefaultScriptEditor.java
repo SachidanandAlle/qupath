@@ -37,6 +37,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.Future;
+import java.util.function.Function;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -56,6 +57,7 @@ import javafx.beans.binding.BooleanBinding;
 import javafx.beans.binding.StringBinding;
 import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.ObjectProperty;
+import javafx.beans.property.ReadOnlyObjectProperty;
 import javafx.beans.property.SimpleObjectProperty;
 import javafx.beans.value.ObservableValue;
 import javafx.concurrent.Task;
@@ -64,6 +66,7 @@ import javafx.geometry.Orientation;
 import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.control.ButtonType;
+import javafx.scene.control.CheckMenuItem;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
@@ -90,6 +93,7 @@ import javafx.stage.Stage;
 import javafx.util.Callback;
 import qupath.lib.common.GeneralTools;
 import qupath.lib.gui.ActionTools;
+import qupath.lib.gui.JavadocViewer;
 import qupath.lib.gui.QuPathGUI;
 import qupath.lib.gui.dialogs.Dialogs;
 import qupath.lib.gui.dialogs.Dialogs.DialogButton;
@@ -113,8 +117,6 @@ import qupath.lib.projects.Projects;
  * Default multilingual script editor.
  * <p>
  * Lacks syntax highlighting and other pleasant features, unfortunately.
- * <p>
- * Warning: This is likely to be replaced by a monolingual editor, supporting Groovy only.
  * 
  * @author Pete Bankhead
  */
@@ -141,15 +143,15 @@ public class DefaultScriptEditor implements ScriptEditor {
 	private QuPathGUI qupath;
 	private Stage dialog;
 	private SplitPane splitMain;
-	private ToggleGroup bgLanguages = new ToggleGroup();
+	private ToggleGroup toggleLanguages = new ToggleGroup();
 	private Font fontMain = Font.font("Courier");
 	
 	private ObjectProperty<ScriptTab> selectedScript = new SimpleObjectProperty<>();
-	protected ObjectProperty<ScriptLanguage> currentLanguage = new SimpleObjectProperty<>();
 	
-	
+	private ObjectProperty<ScriptLanguage> currentLanguage = new SimpleObjectProperty<>();
+		
 	// Binding to indicate it shouldn't be possible to 'Run' any script right now
-	private BooleanBinding disableRun = runningTask.isNotNull().or(Bindings.createBooleanBinding(() -> !(currentLanguage.get() instanceof RunnableLanguage), currentLanguage));
+	private BooleanBinding disableRun = runningTask.isNotNull().or(Bindings.createBooleanBinding(() -> !(currentLanguage.getValue() instanceof RunnableLanguage), currentLanguage));
 	
 	// Binding to indicate it shouldn't be possible to 'Run' any script right now
 	private StringBinding title = Bindings.createStringBinding(() -> {
@@ -164,9 +166,42 @@ public class DefaultScriptEditor implements ScriptEditor {
 	// Keyboard accelerators
 	protected KeyCombination comboPasteEscape = new KeyCodeCombination(KeyCode.V, KeyCombination.SHORTCUT_DOWN, KeyCombination.SHIFT_DOWN);
 	protected final KeyCodeCombination completionCodeCombination = new KeyCodeCombination(KeyCode.SPACE, KeyCombination.CONTROL_DOWN);
-	protected final KeyCodeCombination beautifierCodeCombination = new KeyCodeCombination(KeyCode.L, KeyCombination.SHORTCUT_DOWN, KeyCombination.ALT_DOWN);
-//	protected KeyCombination comboPaste = new KeyCodeCombination(KeyCode.V, KeyCombination.SHORTCUT_DOWN);
-//	protected KeyCombination comboCopy = new KeyCodeCombination(KeyCode.C, KeyCombination.SHORTCUT_DOWN);
+
+	protected Action beautifySourceAction = ActionTools.createAction(this::beautifySource, "Beautify source");
+	protected Action compressSourceAction = ActionTools.createAction(this::compressSource, "Compress source");
+	
+	private BooleanBinding canBeautifyBinding = Bindings.createBooleanBinding(() -> {
+		var language = getCurrentLanguage();
+		var syntax = language == null ? null : language.getSyntax();
+		return syntax == null || !syntax.canBeautify();
+	}, currentLanguageProperty());
+	
+	private BooleanBinding canCompressBinding = Bindings.createBooleanBinding(() -> {
+		var language = getCurrentLanguage();
+		var syntax = language == null ? null : language.getSyntax();
+		return syntax == null || !syntax.canCompress();
+	}, currentLanguageProperty());
+	
+	private void beautifySource() {
+		var tab = getCurrentScriptObject();
+		var editor = tab == null ? null : tab.getEditorComponent();
+		var language = tab == null ? null : tab.getLanguage();
+		var syntax = language == null ? null : language.getSyntax();
+		if (editor == null || syntax == null || !syntax.canBeautify())
+			return;
+		editor.setText(syntax.beautify(editor.getText()));
+	}
+
+	private void compressSource() {
+		var tab = getCurrentScriptObject();
+		var editor = tab == null ? null : tab.getEditorComponent();
+		var language = tab == null ? null : tab.getLanguage();
+		var syntax = language == null ? null : language.getSyntax();
+		if (editor == null || syntax == null || !syntax.canCompress())
+			return;
+		editor.setText(syntax.compress(editor.getText()));		
+	}
+
 	
 	// Note: it doesn't seem to work to set the accelerators...
 	// this leads to the actions being called twice, due to the built-in behaviour of TextAreas
@@ -176,6 +211,11 @@ public class DefaultScriptEditor implements ScriptEditor {
 	protected Action pasteAndEscapeAction;
 	protected Action undoAction;
 	protected Action redoAction;
+	
+	private Action zapGremlinsAction = createReplaceTextAction("Zap gremlins", GeneralTools::zapGremlins, true);
+	private Action replaceQuotesAction = createReplaceTextAction("Replace curly quotes", GeneralTools::replaceCurlyQuotes, true);
+	
+	private Action showJavadocsAction = ActionTools.createAction(() -> JavadocViewer.getInstance().getStage().show(), "Show Javadocs");
 	
 	protected Action runScriptAction;
 	protected Action runSelectedAction;
@@ -202,6 +242,7 @@ public class DefaultScriptEditor implements ScriptEditor {
 	private BooleanProperty autoClearConsole = PathPrefs.createPersistentPreference("scriptingAutoClearConsole", true);
 	private BooleanProperty clearCache = PathPrefs.createPersistentPreference("scriptingClearCache", false);
 	protected BooleanProperty smartEditing = PathPrefs.createPersistentPreference("scriptingSmartEditing", true);
+	private BooleanProperty wrapTextProperty = PathPrefs.createPersistentPreference("scriptingWrapText", false);
 	
 
 	// Regex pattern used to identify whether a script should be run in the JavaFX Platform thread
@@ -218,24 +259,29 @@ public class DefaultScriptEditor implements ScriptEditor {
 		this.qupath = qupath;
 		this.dragDropListener = new ScriptEditorDragDropListener(qupath);
 		initializeActions();
+		
+		currentLanguage.bind(Bindings.createObjectBinding(() -> {
+			var language = toggleLanguages.getSelectedToggle();
+			return language == null ? null : ScriptLanguageProvider.fromString((String)language.getUserData());
+		}, toggleLanguages.selectedToggleProperty()));
+		
 		selectedScript.addListener((v, o, n) -> {
 			if (n == null || n.getLanguage() == null)
 				return;
-			currentLanguage.set(n.getLanguage());
 			setToggle(n.getLanguage());
-		});
-		bgLanguages.selectedToggleProperty().addListener((v, o, n) -> {
-			if (n == null)
-				return;
-
-			currentLanguage.set(ScriptLanguageProvider.fromString((String) n.getUserData()));
 		});
 	}
 	
 	private void setToggle(ScriptLanguage language) {
-		for (Toggle button : bgLanguages.getToggles()) {
+		
+		var currentSelected = toggleLanguages.getSelectedToggle() == null ? null : toggleLanguages.getSelectedToggle().getUserData();
+		var languageName = language == null ? null : language.toString();
+		if (Objects.equals(languageName, currentSelected))
+			return;
+		
+		for (Toggle button : toggleLanguages.getToggles()) {
 			if (language.toString().equals(button.getUserData())) {
-				bgLanguages.selectToggle(button);
+				button.setSelected(true);
 				break;
 			}
 		}
@@ -262,6 +308,10 @@ public class DefaultScriptEditor implements ScriptEditor {
 		insertObjectClassifiersAction = createInsertAction("Object classifiers");
 		insertDetectionMeasurementsAction = createInsertAction("Detection");
 		
+		beautifySourceAction.setAccelerator(new KeyCodeCombination(KeyCode.L, KeyCombination.SHORTCUT_DOWN, KeyCombination.ALT_DOWN));
+		beautifySourceAction.disabledProperty().bind(canBeautifyBinding);
+		compressSourceAction.disabledProperty().bind(canCompressBinding);
+		
 		qupath.projectProperty().addListener((v, o, n) -> {
 			previousImages.clear();
 		});
@@ -270,6 +320,28 @@ public class DefaultScriptEditor implements ScriptEditor {
 		
 		smartEditingAction = ActionTools.createSelectableAction(smartEditing, "Enable smart editing");
 	}
+	
+	
+	Action createReplaceTextAction(String name, Function<String, String> fun, boolean limitToSelected) {
+		var action = new Action(name, e -> replaceCurrentEditorText(fun, limitToSelected));
+		action.disabledProperty().bind(selectedScript.isNull());
+		return action;
+	}
+	
+	void replaceCurrentEditorText(Function<String, String> fun, boolean limitToSelected) {
+		var editor = getCurrentTextComponent();
+		if (editor == null)
+			return;
+		var selected = editor.getSelectedText();
+		if (limitToSelected && !selected.isEmpty()) {
+			var updated = fun.apply(selected);
+			if (!Objects.equals(selected, updated)) {
+				editor.paste(updated);
+			}
+		} else
+			editor.setText(fun.apply(editor.getText()));
+	}
+
 	
 	/**
 	 * Query whether a file represents a supported script.
@@ -292,10 +364,11 @@ public class DefaultScriptEditor implements ScriptEditor {
 	
 
 
-	void maybeRefreshTab(final ScriptTab tab) {
+	void maybeRefreshTab(final ScriptTab tab, boolean updateLanguage) {
 		if (tab != null && autoRefreshFiles.get()) {
 			tab.refreshFileContents();
-			setToggle(tab.getLanguage());
+			if (updateLanguage)
+				setToggle(tab.getLanguage());
 		}
 	}
 
@@ -324,6 +397,7 @@ public class DefaultScriptEditor implements ScriptEditor {
 	 */
 	public void addNewScript(final String script, final ScriptLanguage language, final boolean doSelect) {
 		ScriptEditorControl editor = getNewEditor();
+		editor.wrapTextProperty().bindBidirectional(wrapTextProperty);
 		ScriptTab tab = new ScriptTab(editor, getNewConsole(), script, language);
 		
 		// Attach all listeners
@@ -332,18 +406,22 @@ public class DefaultScriptEditor implements ScriptEditor {
 			tab.updateIsModified();
 		});
 		editor.selectedTextProperty().addListener((v, o, n) -> updateCutCopyActionState());
-		editor.focusedProperty().addListener((v, o, n) -> maybeRefreshTab(tab));
+		editor.focusedProperty().addListener((v, o, n) -> {
+			if (n)
+				maybeRefreshTab(tab, false);
+		});
 		tab.isModifiedProperty().addListener((v, o, n) ->{
 			if (listScripts != null)
 				listScripts.refresh();
 		});
 		
 		// Update relevant field in script editor
-		currentLanguage.set(language);
+//		setCurrentTabLanguage(language);
+//		currentLanguage.set(language);
 		listScripts.getItems().add(tab);
 		if (doSelect)
 			listScripts.getSelectionModel().select(tab);
-		updateSelectedScript();
+		updateSelectedScript(true);
 	}
 	
 	private void addScript(final File file, final boolean doSelect) throws IOException {
@@ -357,6 +435,8 @@ public class DefaultScriptEditor implements ScriptEditor {
 		}
 		
 		ScriptEditorControl editor = getNewEditor();
+		editor.wrapTextProperty().bindBidirectional(wrapTextProperty);
+		
 		ScriptTab tab = new ScriptTab(editor, getNewConsole(), file);
 		
 		// Attach all listeners
@@ -365,7 +445,10 @@ public class DefaultScriptEditor implements ScriptEditor {
 			tab.updateIsModified();
 		});
 		editor.selectedTextProperty().addListener((v, o, n) -> updateCutCopyActionState());
-		editor.focusedProperty().addListener((v, o, n) -> maybeRefreshTab(tab));
+		editor.focusedProperty().addListener((v, o, n) -> {
+			if (n)
+				maybeRefreshTab(tab, false);
+		});
 		tab.isModifiedProperty().addListener((v, o, n) -> {
 			// Update the display of the list
 			if (listScripts != null)
@@ -378,7 +461,7 @@ public class DefaultScriptEditor implements ScriptEditor {
 	}
 	
 	
-	void updateSelectedScript() {
+	void updateSelectedScript(boolean updateLanguage) {
 		ScriptTab tab = listScripts == null ? null : listScripts.getSelectionModel().getSelectedItem();
 		if (tab == selectedScript.get())
 			return;
@@ -389,9 +472,9 @@ public class DefaultScriptEditor implements ScriptEditor {
 			return;
 		
 		double loc = splitMain.getDividers().get(0).getPosition();
-		splitMain.getItems().set(1, newComponent);
 		if (tab != null) {
-			maybeRefreshTab(tab);
+			splitMain.getItems().set(1, newComponent);
+			maybeRefreshTab(tab, false);
 			splitMain.setDividerPosition(0, loc);
 			// Unfortunately need to wait until divider is present before we can set the divider location
 			if (selectedScript.get() == null)
@@ -400,10 +483,12 @@ public class DefaultScriptEditor implements ScriptEditor {
 				tab.getSplitEditor().setDividerPosition(0, selectedScript.get().getSplitEditor().getDividers().get(0).getPosition());
 			
 			// Update the selected language
+			selectedScript.set(tab);
 			setToggle(tab.getLanguage());
-		}
-		
-		selectedScript.set(tab);
+		} else
+			selectedScript.set(tab);
+//		else
+//			splitMain.getItems().set(1, newComponent);
 	}
 
 	ScriptLanguage getSelectedLanguage() {
@@ -418,19 +503,21 @@ public class DefaultScriptEditor implements ScriptEditor {
 
 	protected ScriptEditorControl getNewEditor() {
 		TextArea editor = new CustomTextArea();
-		editor.setWrapText(false);
 		editor.setFont(fontMain);
 		
 		TextAreaControl control = new TextAreaControl(editor);
 		editor.addEventFilter(KeyEvent.KEY_PRESSED, (KeyEvent e) -> {
+			var language = currentLanguage.getValue();
+			if (language == null)
+				return;
 	        if (e.getCode() == KeyCode.TAB) {
-	        	currentLanguage.get().getSyntax().handleTabPress(control, e.isShiftDown());
+	        	language.getSyntax().handleTabPress(control, e.isShiftDown());
 	        	e.consume();
 	        } else if (e.isShortcutDown() && e.getCode() == KeyCode.SLASH) {
-	        	currentLanguage.get().getSyntax().handleLineComment(control);
+	        	language.getSyntax().handleLineComment(control);
 	        	e.consume();
 	        } else if (e.getCode() == KeyCode.ENTER && control.getSelectedText().length() == 0) {
-	        	currentLanguage.get().getSyntax().handleNewLine(control, smartEditing.get());
+	        	language.getSyntax().handleNewLine(control, smartEditing.get());
 				e.consume();
 			}
 	    });
@@ -478,6 +565,8 @@ public class DefaultScriptEditor implements ScriptEditor {
 		
 		menubar.getMenus().add(menuFile);
 		
+		var miWrapLines = new CheckMenuItem("Wrap lines");
+		miWrapLines.selectedProperty().bindBidirectional(wrapTextProperty);
 
 		// Edit menu
 		Menu menuEdit = new Menu("Edit");
@@ -493,7 +582,13 @@ public class DefaultScriptEditor implements ScriptEditor {
 				null,
 				findAction,
 				null,
-				smartEditingAction
+				beautifySourceAction,
+				compressSourceAction,
+				zapGremlinsAction,
+				replaceQuotesAction,
+				null,
+				smartEditingAction,
+				miWrapLines
 				);
 //		menuEdit.setMnemonic(KeyEvent.VK_E);
 //
@@ -524,13 +619,17 @@ public class DefaultScriptEditor implements ScriptEditor {
 		for (ScriptLanguage language : new LinkedHashSet<>(availableLanguages)) {
 			String languageName = language.toString();
 			RadioMenuItem item = new RadioMenuItem(languageName);
-			item.setToggleGroup(bgLanguages);
+			item.setToggleGroup(toggleLanguages);
 			item.setUserData(languageName);
 			if (language instanceof RunnableLanguage)
 				menuLanguages.getItems().add(item);
 			else
 				nonRunnableLanguages.add(item);
-			item.setOnAction(e -> setCurrentTabLanguage(language));
+
+			item.selectedProperty().addListener((v, o, n) -> {
+				if (n)
+					setCurrentTabLanguage(language);
+			});
 		}
 		
 		if (!nonRunnableLanguages.isEmpty()) {
@@ -541,10 +640,16 @@ public class DefaultScriptEditor implements ScriptEditor {
 		}
 		
 		// Setting the default language (Groovy in this case), or if not present, the first one available
-		var defaultLanguage = bgLanguages.getToggles().stream().filter(t -> t.getUserData().equals(GroovyLanguage.getInstance())).findFirst().orElseGet(() -> bgLanguages.getToggles().get(0));
-		bgLanguages.selectToggle(defaultLanguage);
+		var defaultLanguage = toggleLanguages.getToggles()
+				.stream()
+				.filter(t -> t.getUserData().equals(GroovyLanguage.getInstance()))
+				.findFirst()
+				.orElseGet(() -> toggleLanguages.getToggles().get(0));
+		defaultLanguage.setSelected(true);
+//		toggleLanguages.selectToggle(defaultLanguage);
 		
 		menubar.getMenus().add(menuLanguages);
+						
 		
 		// Insert menu
 		Menu menuInsert = new Menu("Insert");
@@ -594,6 +699,13 @@ public class DefaultScriptEditor implements ScriptEditor {
 				ActionTools.createCheckMenuItem(ActionTools.createSelectableAction(clearCache, "Clear cache (batch processing)"))
 				);
 		menubar.getMenus().add(menuRun);
+		
+		// Help menu
+		Menu menuHelp = new Menu("Help");
+		MenuTools.addMenuItems(menuHelp,
+				showJavadocsAction
+				);
+		menubar.getMenus().add(menuHelp);
 
 		// File list
 		BorderPane panelList = new BorderPane();
@@ -603,7 +715,7 @@ public class DefaultScriptEditor implements ScriptEditor {
 		titledScripts.prefHeightProperty().bind(panelList.heightProperty());
 		titledScripts.setCollapsible(false);
 		panelList.setCenter(titledScripts);
-		listScripts.getSelectionModel().selectedItemProperty().addListener((v, o, n) -> updateSelectedScript());
+		listScripts.getSelectionModel().selectedItemProperty().addListener((v, o, n) -> updateSelectedScript(true));
 		listScripts.setCellFactory(new Callback<ListView<ScriptTab>, 
 	            ListCell<ScriptTab>>() {
 	                @Override 
@@ -658,7 +770,9 @@ public class DefaultScriptEditor implements ScriptEditor {
 		}
 	}
 	
-	
+	protected ReadOnlyObjectProperty<ScriptLanguage> currentLanguageProperty() {
+		return currentLanguage;
+	}
 	
 	protected ScriptLanguage getCurrentLanguage() {
 		return currentLanguage.get();
@@ -773,7 +887,7 @@ public class DefaultScriptEditor implements ScriptEditor {
 	}
 	
 	
-	private static abstract class LoggerWriter extends Writer {
+	private abstract static class LoggerWriter extends Writer {
 
 		@Override
 		public void write(char[] cbuf, int off, int len) throws IOException {
@@ -889,7 +1003,7 @@ public class DefaultScriptEditor implements ScriptEditor {
 					}
 				}
 				// TODO: Allow multiple extensions to be used?
-				File file = Dialogs.getChooser(dialog).promptToSaveFile("Save script file", dir, tab.getName(), currentLanguage.getName() + " file", tab.getRequestedExtensions()[0]);
+				File file = Dialogs.getChooser(dialog).promptToSaveFile("Save script file", dir, tab.getName(), currentLanguage.getValue().getName() + " file", tab.getRequestedExtensions()[0]);
 				if (file == null)
 					return false;
 				tab.saveToFile(getCurrentText(), file);
@@ -1282,6 +1396,9 @@ public class DefaultScriptEditor implements ScriptEditor {
 		var text = getClipboardText(escapeCharacters);
 		if (text == null)
 			return false;
+		
+		
+		
 		control.paste(text);
 		return true;
 	}
@@ -1582,7 +1699,7 @@ public class DefaultScriptEditor implements ScriptEditor {
 			ind--;
 		if (ind < 0) {
 			dialog.close();
-			dialog = null;
+//			dialog = null;
 		}
 		else
 			listScripts.getSelectionModel().select(ind);
@@ -1591,6 +1708,11 @@ public class DefaultScriptEditor implements ScriptEditor {
 
 	@Override
 	public void showEditor() {
+		if (!Platform.isFxApplicationThread()) {
+			Platform.runLater(this::showEditor);
+			return;
+		}
+
 		if (dialog == null)
 			createDialog();
 		else {
@@ -1609,6 +1731,10 @@ public class DefaultScriptEditor implements ScriptEditor {
 
 	@Override
 	public void showScript(String name, String script) {
+		if (!Platform.isFxApplicationThread()) {
+			Platform.runLater(() -> showScript(name, script));
+			return;
+		}
 		if (dialog == null)
 			createDialog();
 		addNewScript(script, getDefaultLanguage(name), true);
@@ -1634,9 +1760,12 @@ public class DefaultScriptEditor implements ScriptEditor {
 		return PlainLanguage.getInstance();
 	}
 
-
 	@Override
 	public void showScript(File file) {
+		if (!Platform.isFxApplicationThread()) {
+			Platform.runLater(() -> showScript(file));
+			return;
+		}
 		try {
 			if (dialog == null)
 				createDialog();

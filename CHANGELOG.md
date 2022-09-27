@@ -4,68 +4,126 @@ This is a work-in-progress.
 
 ### Enhancements
 
-* Objects now have IDs
-  * This aims to make it much easier to match up objects whenever some further analysis is done elsewhere (e.g. classification or clustering in Python or R)
-  * See https://github.com/qupath/qupath/pull/959
+* Object improvements
+  * Annotations can now have visible descriptions
+    * Visible at the bottom of the 'Annotation' and 'Hierarchy' tabs or in a standalone window
+    * Support plain text, markdown and html
+  * All objects can now have IDs
+    * This aims to make it much easier to match up objects whenever some further analysis is done elsewhere (e.g. classification or clustering in Python or R)
+    * See https://github.com/qupath/qupath/pull/959
+* Many script editor improvements, including:
+  * Syntax highlighting for Markdown, JSON and XML documents
+  * Added 'Replace/Next' and 'Replace all' features to Find window (https://github.com/qupath/qupath/pull/898)
+  * New lines now trigger caret following (https://github.com/qupath/qupath/pull/900)
+  * Proper tab handling (https://github.com/qupath/qupath/pull/902)
+  * Introduction of 'Smart Editing' (enabled through the corresponding preference under 'Edit'), which supports the following features:
+    * Brace block handling (https://github.com/qupath/qupath/pull/901)
+    * Smart parentheses and (double/single) quotes (https://github.com/qupath/qupath/pull/907)
+    * Comment block handling (https://github.com/qupath/qupath/pull/908)
+  * New 'Edit -> Wrap lines', 'Edit -> Replace curly quotes' and 'Edit -> Zap gremlins' options
+* New 'Analyze -> Spatial analysis -> Signed distance to annotations 2D' command (https://github.com/qupath/qupath/issues/1032)
+* Better support for opening/importing from files containing multiple images
+  * New 'Show image selector' option when adding images to a project
+  * Image selector dialog has a filter to find images more easily
+  * Image selector dialog shows all image dimension and pyramid level information
+* Improved Brightness/Contrast options, including
+  * Switch between dark and light backgrounds (still experimental)
+  * More consistent behavior with 'Show grayscale' option
+  * Show RGB histograms
+* Improved gamma support
+  * Adjust gamma with a slider in Brightness/Contrast window (no longer in preferences)
+  * Apply gamma to mini/channel viewers
+* Improved OME-TIFF export
+  * Better performance when writing large & multi-channel images
+  * Optionally cast to a different pixel type, via `OMEPyramidWriter.Builder.pixelType(type)`
 * Completely rewritten 'View -> Show view tracker' command
+* Improved channel viewer
+  * Show only the visible/most relevant channels by default, based on image type
+  * Right-click to optionally show all available channels
 * Improved scalebar preferences
   * New preferences to control font size/weight & line width (bottom left)
   * Independently adjust font size for location text (bottom right)
 * Improved measurement tables
   * Include thumbnail images for each object (can be turned off with 'Include image column in measurement tables' preference)
   * Center viewer on an object by selecting it & pressing the 'spacebar'
-* Many script editor improvements, including:
-  * Added 'Replace/Next' and 'Replace all' features to Find window (https://github.com/qupath/qupath/pull/898)
-  * New lines now trigger caret following (https://github.com/qupath/qupath/pull/900)
-  * Proper tab handling (https://github.com/qupath/qupath/pull/902)
-  * Introduction of 'Smart Editing' (enabled through the corresponding persistent preference under 'Edit'), which supports the following features:
-    * Brace block handling (https://github.com/qupath/qupath/pull/901)
-    * Smart parentheses and (double/single) quotes (https://github.com/qupath/qupath/pull/907)
-    * Comment block handling (https://github.com/qupath/qupath/pull/908)
-* Improved Brightness/Contrast options, including
-  * Switch between dark and light backgrounds (still experimental)
-  * More consistent behavior with 'Show grayscale' option
 * Improved support for switching between QuPath objects and ImageJ ROIs
   * New 'Extensions -> ImageJ -> Import ImageJ ROIs' command
   * Import .roi and RoiSet.zip files by drag & drop
   * Built-in ImageJ plugin to send RoiManager ROIs to QuPath (not only overlays)
   * Retain ROI position information when sending ROIs from ImageJ (hyper)stacks
+* Reduced use of Java serialization
+  * Serialization filters now used to better control deserialized classes
+* OpenCV is no longer a dependency of qupath-core (https://github.com/qupath/qupath/issues/961)
+  * Moved `OpenCVTypeAdapters` to qupath-core-processing
+  * Switched `BufferedImageTools.resize` to use ImageJ internally
+* Use `-Djts.overlay=ng` system property by default with Java Topology Suite
+  * This should resolve many occurrences of the dreaded `TopologyException` when manipulating ROIs & geometries
+* Improved `LabeledImageServer.Builder` options
+  * Use `grayscale()` to export images without an extra lookup table (easier to import in some other software; see https://github.com/qupath/qupath/issues/993)
+  * Use `.shuffleInstanceLabels(false)` to avoid shuffling objects with `useInstanceLabels()`
+* New 'Objects -> Lock... ->' commands
+  * Enables annotations & TMA cores to be locked so they cannot accidentally be moved or edited (deletion is still possible)
+  * Toggle the 'locked' status of any selected object with `Ctrl/Cmd + K`
+  * View locked status for annotations under the 'Annotation' tab
 * Updated prompt to set the image type
+* Added `QuPathGUI.lookupAccelerator(combo)` methods to check if a key combinations are already registered
 * Missing thumbnails are automatically regenerated when a project is opened
 * Avoid converting the pixel type to 32-bit unnecessarily when sending image regions to ImageJ
 * Warn if trying to train a pixel classifier with too many features (https://github.com/qupath/qupath/issues/947)
 * Directory choosers can now have titles (https://github.com/qupath/qupath/issues/940)
+* Added `getCurrentImageName()` method to `QP` for scripting (https://github.com/qupath/qupath/issues/1009)
+* Code cleaned up and simplified, with older (previously deprecated) detection classifiers removed
+  * `PathClassifierTools` methods have been moved to `PathObjectTools` and `ServerTools`
+* Support passing arguments via a map to `runPlugin`, rather than only a JSON-encoded String
+* Add `difference`, `symDifference` and `subtract` methods to `RoiTools` (https://github.com/qupath/qupath/issues/995)
+* Add `ROI.updatePlane(plane)` method to move a ROI to a different z-slice or timepoint (https://github.com/qupath/qupath/issues/1052)
 
 ### Bugs fixed
 * Reading from Bio-Formats blocks forever when using multiple series outside a project (https://github.com/qupath/qupath/issues/894)
+* Can't swap dimensions for Bio-Formats using optional args (https://github.com/qupath/qupath/issues/1036)
+  * Fix broken support for optional args, e.g. `--dims XYTCZ` when adding images to a project
+* Image resizing bug affecting labeled image export (https://github.com/qupath/qupath/issues/974)
+* Remove fragments & holes doesn't remove small objects from the current selection (https://github.com/qupath/qupath/issues/976)
 * 'Ignore case' in the Find window of the Script editor does not ignore case (https://github.com/qupath/qupath/issues/889)
 * Owner of Find window in the script editor is lost when the script editor window is closed (https://github.com/qupath/qupath/issues/893)
 * 'Zoom to fit' doesn't handle changes in window size
 * Duplicating images with some names can cause an exception (https://github.com/qupath/qupath/issues/942)
 * Removing >255 measurements throws error when reproducing from workflow script (https://github.com/qupath/qupath/issues/915)
+* Calling Quit multiple times results in multiple dialogs appearing (https://github.com/qupath/qupath/issues/941)
 * QuPath doesn't support some channel combinations through Bio-Formats (https://github.com/qupath/qupath/issues/956)
+* 'Cannot invoke “java.lang.Double.doubleValue()”' exception in 'Create Thresholder' (https://github.com/qupath/qupath/issues/988)
+* Uncaught exceptions can fill the screen with duplicate error notifications (https://github.com/qupath/qupath/issues/990)
+* Locked point annotations can still be edited (https://github.com/qupath/qupath/issues/1001)
+* 'Normalized OD colors' should not be available for RGB fluorescence images (https://github.com/qupath/qupath/issues/1006)
+* Training a new object classifier with the same settings and annotations can give a different result when an image is reopened (https://github.com/qupath/qupath/issues/1016)
+* It isn't possible to run cell detection on channels with " in the name (https://github.com/qupath/qupath/issues/1022)
+* Fix occasional "One of the arguments' values is out of range" exception with Delaunay triangulation
 
-### Changes through Bio-Formats 6.9.1
-* Bio-Formats 6.9.1 brings several important new features to QuPath, including:
+### Changes through Bio-Formats 6.10.1
+* Bio-Formats 6.10.1 brings several important new features to QuPath, including:
   * Support for reading DICOM whole slide images
   * Improved handling of brightfield CZI images (i.e. filling unscanned regions in white, not black)
   * Substantial performance improvements for reading/writing some formats (including OME-TIFF)
 * Bio-Formats in combination with Java 17 also has some known issues
   * Unable to properly read a subset of svs files (https://github.com/ome/bioformats/issues/3757)
   * Memoization is not possible with Java 17, and turned off in QuPath by default (https://github.com/qupath/qupath/issues/957)
-* For details, see https://docs.openmicroscopy.org/bio-formats/6.9.1/about/whats-new.html
+* For details, see https://docs.openmicroscopy.org/bio-formats/6.10.0/about/whats-new.html
 
 ### Dependency updates
 * Adoptium OpenJDK 17
-* Bio-Formats 6.9.1
-* JavaFX 17.0.2
-* Groovy 4.0.1
-* Gson 2.9.0
+* Bio-Formats 6.10.1
+* JavaFX 19.0.0
+* Java Topology Suite 1.19.0
+* Groovy 4.0.5
+* Gson 2.9.1
 * Guava 31.1
+* ikonli 12.3.1
 * JavaCPP 1.5.7
-* JFreeSVG 5.0.2
+* JFreeSVG 5.0.3
+* Logback 1.3.1
 * OpenCV 4.5.5
 * Picocli 4.6.3
+* SLF4J 2.0.0
 
 
 ## Version 0.3.2

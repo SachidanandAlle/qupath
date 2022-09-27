@@ -53,7 +53,6 @@ import javafx.beans.value.ObservableValue;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.collections.transformation.FilteredList;
-import qupath.lib.classifiers.PathClassifierTools;
 import qupath.lib.common.GeneralTools;
 import qupath.lib.gui.measure.ObservableMeasurementTableData.ROICentroidMeasurementBuilder.CentroidType;
 import qupath.lib.gui.prefs.PathPrefs;
@@ -87,7 +86,7 @@ import qupath.opencv.ml.pixel.PixelClassificationMeasurementManager;
  */
 public class ObservableMeasurementTableData implements PathTableData<PathObject> {
 	
-	final static Logger logger = LoggerFactory.getLogger(ObservableMeasurementTableData.class);
+	static final Logger logger = LoggerFactory.getLogger(ObservableMeasurementTableData.class);
 	
 	private ImageData<?> imageData;
 	
@@ -248,7 +247,7 @@ public class ObservableMeasurementTableData implements PathTableData<PathObject>
 		
 		
 		// Get all the 'built-in' feature measurements, stored in the measurement list
-		Collection<String> features = PathClassifierTools.getAvailableFeatures(pathObjectListCopy);
+		Collection<String> features = PathObjectTools.getAvailableFeatures(pathObjectListCopy);
 		
 		// Add derived measurements if we don't have only detections
 		if (containsAnnotations || containsTMACores || containsRoot) {
@@ -609,7 +608,7 @@ public class ObservableMeasurementTableData implements PathTableData<PathObject>
 			if (imageData == null || imageData.getHierarchy() == null)
 				return;
 			
-			Set<PathClass> pathClasses = PathClassifierTools.getRepresentedPathClasses(imageData.getHierarchy(), PathDetectionObject.class);
+			Set<PathClass> pathClasses = PathObjectTools.getRepresentedPathClasses(imageData.getHierarchy(), PathDetectionObject.class);
 
 //			// Ensure that any base classes are present
 //			Set<PathClass> basePathClasses = new LinkedHashSet<>();
@@ -1139,7 +1138,7 @@ public class ObservableMeasurementTableData implements PathTableData<PathObject>
 	
 	
 	
-	static abstract class StringMeasurementBuilder implements MeasurementBuilder<String> {
+	abstract static class StringMeasurementBuilder implements MeasurementBuilder<String> {
 		
 		protected abstract String getMeasurementValue(final PathObject pathObject);
 		
@@ -1387,7 +1386,7 @@ public class ObservableMeasurementTableData implements PathTableData<PathObject>
 	
 	
 	
-	static abstract class NumericMeasurementBuilder implements MeasurementBuilder<Number> {
+	abstract static class NumericMeasurementBuilder implements MeasurementBuilder<Number> {
 		
 		public double computeValue(final PathObject pathObject) {
 			// TODO: Flip this around!  Create binding from value, not value from binding...
@@ -1428,7 +1427,7 @@ public class ObservableMeasurementTableData implements PathTableData<PathObject>
 	
 	
 	
-	static abstract class RoiMeasurementBuilder extends NumericMeasurementBuilder {
+	abstract static class RoiMeasurementBuilder extends NumericMeasurementBuilder {
 		
 		private ImageData<?> imageData;
 		

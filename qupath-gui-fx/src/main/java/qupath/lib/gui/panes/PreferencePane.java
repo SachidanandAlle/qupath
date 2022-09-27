@@ -25,14 +25,19 @@ package qupath.lib.gui.panes;
 
 import java.io.File;
 import java.util.Arrays;
-import java.util.List;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import org.controlsfx.control.PropertySheet;
 import org.controlsfx.control.PropertySheet.Item;
 import org.controlsfx.control.PropertySheet.Mode;
+import org.controlsfx.control.SearchableComboBox;
 import org.controlsfx.property.editor.AbstractPropertyEditor;
 import org.controlsfx.property.editor.DefaultPropertyEditorFactory;
 import org.controlsfx.property.editor.Editors;
@@ -44,11 +49,13 @@ import javafx.beans.binding.Bindings;
 import javafx.beans.property.IntegerProperty;
 import javafx.beans.property.Property;
 import javafx.beans.value.ObservableValue;
+import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.scene.Node;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.TextField;
 import javafx.scene.control.Tooltip;
+import javafx.scene.input.MouseEvent;
 import javafx.scene.paint.Color;
 import javafx.scene.text.FontWeight;
 import qupath.lib.common.GeneralTools;
@@ -56,6 +63,7 @@ import qupath.lib.gui.dialogs.Dialogs;
 import qupath.lib.gui.logging.LogManager;
 import qupath.lib.gui.logging.LogManager.LogLevel;
 import qupath.lib.gui.prefs.PathPrefs;
+import qupath.lib.gui.prefs.PathPrefs.DetectionTreeDisplayModes;
 import qupath.lib.gui.prefs.PathPrefs.FontSize;
 import qupath.lib.gui.prefs.PathPrefs.ImageTypeSetting;
 import qupath.lib.gui.tools.ColorToolsFX;
@@ -72,7 +80,7 @@ import qupath.lib.gui.prefs.QuPathStyleManager;
  */
 public class PreferencePane {
 
-	final private static Logger logger = LoggerFactory.getLogger(PreferencePane.class);
+	private static final Logger logger = LoggerFactory.getLogger(PreferencePane.class);
 
 	private PropertySheet propSheet = new PropertySheet();
 
@@ -191,6 +199,52 @@ public class PreferencePane {
 				category,
 				"Include menu items related to legacy commands (no longer intended for use)");
 
+		addPropertyPreference(PathPrefs.detectionTreeDisplayModeProperty(), DetectionTreeDisplayModes.class,
+				"Hierarchy detection display",
+				"General",
+				"Choose how to display detections in the hierarchy tree view - choose 'None' for the best performance");
+		
+		/*
+		 * Locale
+		 */
+		category = "Locale";
+		var localeList = FXCollections.observableArrayList(
+				Arrays.stream(Locale.getAvailableLocales())
+				.filter(l -> !l.getLanguage().isBlank())
+				.sorted(Comparator.comparing(l -> l.getDisplayName(Locale.US)))
+				.collect(Collectors.toList())
+				);
+		
+		// Would like to use a searchable combo box,
+		// but https://github.com/controlsfx/controlsfx/issues/1413 is problematic
+		var localeSearchable = false;
+		addChoicePropertyPreference(PathPrefs.defaultLocaleProperty(), localeList, Locale.class,
+				"Main default locale",
+				category,
+				"Global default locale setting; changing this can update both display and format locales.\n"
+						+ "It is *strongly* recommended to use English (United States) for consistent formatting, especially of \n"
+						+ "decimal numbers (using . as the decimal separator).\n\n"
+						+ "You can reset the locale by double-clicking on the dropdown menu.",
+				localeSearchable);
+
+		addChoicePropertyPreference(PathPrefs.defaultLocaleDisplayProperty(), localeList, Locale.class,
+				"Display locale",
+				category,
+				"Locale used for display messages\n"
+						+ "It is *strongly* recommended to use English (United States) for consistent formatting, especially of \n"
+						+ "decimal numbers (using . as the decimal separator).\n\n"
+						+ "You can reset the locale by double-clicking on the dropdown menu.",
+				localeSearchable);
+		
+		addChoicePropertyPreference(PathPrefs.defaultLocaleFormatProperty(), localeList, Locale.class,
+				"Format locale",
+				category,
+				"Locale used for formatting dates, numbers etc.\n"
+						+ "It is *strongly* recommended to use English (United States) for consistent formatting, especially of \n"
+						+ "decimal numbers (using . as the decimal separator).\n\n"
+						+ "You can reset the locale by double-clicking on the dropdown menu.",
+				localeSearchable);
+
 
 		/*
 		 * Export
@@ -235,9 +289,9 @@ public class PreferencePane {
 				"Auto Brightness/Contrast saturation %", category, 
 				"Set % bright and % dark pixels that should be saturated when applying 'Auto' brightness/contrast settings");
 		
-		addPropertyPreference(PathPrefs.viewerGammaProperty(), Double.class,
-				"Gamma value (display only)", category, 
-				"Set the gamma value applied to the image in the viewer for display - recommended to leave at default value of 1");
+//		addPropertyPreference(PathPrefs.viewerGammaProperty(), Double.class,
+//				"Gamma value (display only)", category, 
+//				"Set the gamma value applied to the image in the viewer for display - recommended to leave at default value of 1");
 		
 		addPropertyPreference(PathPrefs.invertZSliderProperty(), Boolean.class,
 				"Invert z-position slider",
@@ -518,7 +572,6 @@ public class PreferencePane {
 	}
 	
 	
-
 	/**
 	 * Add a new choice preference, to select from a list of possibilities.
 	 * 
@@ -530,7 +583,24 @@ public class PreferencePane {
 	 * @param description
 	 */
 	public <T> void addChoicePropertyPreference(final Property<T> prop, final ObservableList<T> choices, final Class<? extends T> cls, final String name, final String category, final String description) {
-		PropertySheet.Item item = new ChoicePropertyItem<>(prop, choices, cls)
+		addChoicePropertyPreference(prop, choices, cls, name, category, description, false);
+	}
+	
+
+	/**
+	 * Add a new choice preference, to select from an optionally searchable list of possibilities.
+	 * 
+	 * @param prop
+	 * @param choices
+	 * @param cls
+	 * @param name
+	 * @param category
+	 * @param description
+	 * @param makeSearchable make the choice item's editor searchable (useful for long lists)
+	 */
+	public <T> void addChoicePropertyPreference(final Property<T> prop, final ObservableList<T> choices, final Class<? extends T> cls, 
+			final String name, final String category, final String description, boolean makeSearchable) {
+		PropertySheet.Item item = new ChoicePropertyItem<>(prop, choices, cls, makeSearchable)
 				.name(name)
 				.category(category)
 				.description(description);
@@ -552,7 +622,7 @@ public class PreferencePane {
 	/**
 	 * Base implementation of {@link Item}.
 	 */
-	public static abstract class PropertyItem implements PropertySheet.Item {
+	public abstract static class PropertyItem implements PropertySheet.Item {
 
 		private String name;
 		private String category;
@@ -722,14 +792,24 @@ public class PreferencePane {
 	static class ChoicePropertyItem<T> extends DefaultPropertyItem<T> {
 
 		private final ObservableList<T> choices;
-
+		private final boolean makeSearchable;
+		
 		ChoicePropertyItem(final Property<T> prop, final ObservableList<T> choices, final Class<? extends T> cls) {
+			this(prop, choices, cls, false);
+		}
+
+		ChoicePropertyItem(final Property<T> prop, final ObservableList<T> choices, final Class<? extends T> cls, boolean makeSearchable) {
 			super(prop, cls);
 			this.choices = choices;
+			this.makeSearchable = makeSearchable;
 		}
 		
 		public ObservableList<T> getChoices() {
 			return choices;
+		}
+		
+		public boolean makeSearchable() {
+			return makeSearchable;
 		}
 
 	}
@@ -783,11 +863,55 @@ public class PreferencePane {
 
 	}
 	
+	
+	/**
+	 * Editor for selecting directory paths.
+	 * 
+	 * Appears as a text field that can be double-clicked to launch a directory chooser.
+	 * Note: This may fire too many events, see https://github.com/controlsfx/controlsfx/issues/1413
+	 * @param <T> 
+	 */
+	static class SearchableChoiceEditor<T> extends AbstractPropertyEditor<T, SearchableComboBox<T>> {
+
+		public SearchableChoiceEditor(Item property, Collection<? extends T> choices) {
+			super(property, new SearchableComboBox<T>());
+			getEditor().getItems().setAll(choices);
+		}
+
+		@Override
+		public void setValue(T value) {
+			// Only set the value if it's available as a choice
+			if (getEditor().getItems().contains(value))
+				getEditor().getSelectionModel().select(value);
+		}
+
+		@Override
+		protected ObservableValue<T> getObservableValue() {
+			return getEditor().getSelectionModel().selectedItemProperty();
+		}
+		
+		
+		
+	}
+	
 	// We want to reformat the display of these to avoid using all uppercase
-	private static List<Class<?>> reformatTypes = Arrays.asList(
-			FontWeight.class,
-			LogLevel.class
+	private static Map<Class<?>, Function<?, String>> reformatTypes = Map.of(
+			FontWeight.class, PreferencePane::simpleFormatter,
+			LogLevel.class, PreferencePane::simpleFormatter,
+			Locale.class, PreferencePane::localeFormatter
 			);
+	
+	private static String simpleFormatter(Object obj) {
+		var s = Objects.toString(obj);
+		s = s.replaceAll("_", " ");
+		if (Objects.equals(s, s.toUpperCase()))
+			return s.substring(0, 1) + s.substring(1).toLowerCase();
+		return s;
+	}
+	
+	private static String localeFormatter(Object locale) {
+		return locale == null ? null : ((Locale)locale).getDisplayName(Locale.US);
+	}
 
 	/**
 	 * Extends {@link DefaultPropertyEditorFactory} to handle setting directories and creating choice editors.
@@ -800,23 +924,34 @@ public class PreferencePane {
 			if (item.getType() == File.class) {
 				return new DirectoryEditor(item, new TextField());
 			}
+			PropertyEditor<?> editor;
 			if (item instanceof ChoicePropertyItem) {
-				return Editors.createChoiceEditor(item, ((ChoicePropertyItem<?>)item).getChoices());
-			}
-			var editor = super.call(item);
-			if (reformatTypes.contains(item.getType()) && editor.getEditor() instanceof ComboBox) {
+				var choiceItem = ((ChoicePropertyItem<?>)item);
+				if (choiceItem.makeSearchable()) {
+					editor = new SearchableChoiceEditor<>(choiceItem, choiceItem.getChoices());
+				} else
+					editor = Editors.createChoiceEditor(item, choiceItem.getChoices());
+			} else
+				editor = super.call(item);
+			
+			if (reformatTypes.containsKey(item.getType()) && editor.getEditor() instanceof ComboBox) {
 				@SuppressWarnings("rawtypes")
 				var combo = (ComboBox)editor.getEditor();
-				Function<?, String> stringFun = obj -> {
-					var s = Objects.toString(obj);
-					s = s.replaceAll("_", " ");
-					if (Objects.equals(s, s.toUpperCase()))
-						return s.substring(0, 1) + s.substring(1).toLowerCase();
-					return s;
-				};
-				combo.setCellFactory(obj -> GuiTools.createCustomListCell(stringFun));
-				combo.setButtonCell(GuiTools.createCustomListCell(stringFun));
+				var formatter = reformatTypes.get(item.getType());
+				combo.setCellFactory(obj -> GuiTools.createCustomListCell(formatter));
+				combo.setButtonCell(GuiTools.createCustomListCell(formatter));
 			}
+			
+			// Make it easier to reset default locale
+			if (Locale.class.equals(item.getType())) {
+				editor.getEditor().addEventHandler(MouseEvent.MOUSE_CLICKED, e -> {
+					if (e.getClickCount() == 2) {
+						if (Dialogs.showConfirmDialog("Reset locale", "Reset locale to 'English (United States)'?"))
+							item.setValue(Locale.US);
+					}
+				});
+			}
+			
 			return editor;
 		}
 	}

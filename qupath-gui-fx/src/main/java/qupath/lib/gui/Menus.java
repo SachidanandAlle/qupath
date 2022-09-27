@@ -58,6 +58,7 @@ import qupath.lib.gui.tools.IconFactory.PathIcons;
 import qupath.lib.objects.PathAnnotationObject;
 import qupath.lib.objects.PathCellObject;
 import qupath.lib.objects.PathDetectionObject;
+import qupath.lib.objects.PathObjectTools;
 import qupath.lib.objects.PathTileObject;
 import qupath.lib.objects.TMACoreObject;
 import qupath.lib.plugins.objects.DilateAnnotationPlugin;
@@ -69,12 +70,12 @@ import qupath.lib.plugins.objects.SplitAnnotationsPlugin;
 
 class Menus {
 	
-	private final static String URL_DOCS       = "https://qupath.readthedocs.io";
-	private final static String URL_VIDEOS     = "https://www.youtube.com/c/QuPath";
-	private final static String URL_CITATION   = "https://qupath.readthedocs.io/en/latest/docs/intro/citing.html";
-	private final static String URL_BUGS       = "https://github.com/qupath/qupath/issues";
-	private final static String URL_FORUM      = "https://forum.image.sc/tags/qupath";
-	private final static String URL_SOURCE     = "https://github.com/qupath/qupath";
+	private static final String URL_DOCS       = "https://qupath.readthedocs.io";
+	private static final String URL_VIDEOS     = "https://www.youtube.com/c/QuPath";
+	private static final String URL_CITATION   = "https://qupath.readthedocs.io/en/latest/docs/intro/citing.html";
+	private static final String URL_BUGS       = "https://github.com/qupath/qupath/issues";
+	private static final String URL_FORUM      = "https://forum.image.sc/tags/qupath";
+	private static final String URL_SOURCE     = "https://github.com/qupath/qupath";
 
 	
 	private QuPathGUI qupath;
@@ -250,10 +251,16 @@ class Menus {
 //		@Deprecated
 //		public final Action SHAPE_FEATURES = qupath.createPluginAction("Add shape features", ShapeFeaturesPlugin.class, null);
 
-		@ActionDescription("Calculate distances between detection centroids and the closest annotation for each classification. " +
+		@ActionDescription("Calculate distances between detection centroids and the closest annotation for each classification, using zero if the centroid is inside the annotation. " +
 				"For example, this may be used to identify the distance of every cell from 'bigger' region that has been annotated (e.g. an area of tumor, a blood vessel).")
 		@ActionMenu("Spatial analysis>Distance to annotations 2D")
-		public final Action DISTANCE_TO_ANNOTATIONS = qupath.createImageDataAction(imageData -> Commands.distanceToAnnotations2D(imageData));
+		public final Action DISTANCE_TO_ANNOTATIONS = qupath.createImageDataAction(imageData -> Commands.distanceToAnnotations2D(imageData, false));
+		
+		@ActionDescription("Calculate distances between detection centroids and the closest annotation for each classification, using the negative distance to the boundary if the centroid is inside the annotation. " +
+				"For example, this may be used to identify the distance of every cell from 'bigger' region that has been annotated (e.g. an area of tumor, a blood vessel).")
+		@ActionMenu("Spatial analysis>Signed distance to annotations 2D")
+		public final Action SIGNED_DISTANCE_TO_ANNOTATIONS = qupath.createImageDataAction(imageData -> Commands.distanceToAnnotations2D(imageData, true));
+		
 		@ActionDescription("Calculate distances between detection centroids for each classification. " +
 				"For example, this may be used to identify the closest cell of a specified type.")
 		@ActionMenu("Spatial analysis>Detect centroid distances 2D")
@@ -490,6 +497,26 @@ class Menus {
 		@ActionDescription("Select objects based upon their classification.")
 		@ActionMenu("Select...>Select objects by classification")
 		public final Action SELECT_BY_CLASSIFICATION = qupath.createImageDataAction(imageData -> Commands.promptToSelectObjectsByClassification(qupath, imageData));
+
+		@ActionDescription("Lock all currently selected objects.")
+		@ActionMenu("Lock...>Lock selected objects")
+		@ActionAccelerator("shortcut+shift+k")
+		public final Action LOCK_SELECTED_OBJECTS = qupath.createImageDataAction(imageData -> PathObjectTools.lockSelectedObjects(imageData.getHierarchy()));
+
+		@ActionDescription("Unlock all currently selected objects.")
+		@ActionMenu("Lock...>Unlock selected objects")
+		@ActionAccelerator("shortcut+alt+k")
+		public final Action UNLOCK_SELECTED_OBJECTS = qupath.createImageDataAction(imageData -> PathObjectTools.unlockSelectedObjects(imageData.getHierarchy()));
+
+		@ActionDescription("Toggle the 'locked' state of all currently selected objects.")
+		@ActionMenu("Lock...>Toggle selected objects locked")
+		@ActionAccelerator("shortcut+k")
+		public final Action TOGGLE_SELECTED_OBJECTS_LOCKED = qupath.createImageDataAction(imageData -> PathObjectTools.toggleSelectedObjectsLocked(imageData.getHierarchy()));
+
+		@ActionDescription("Show descriptions for the currently-selected object, where available. "
+				+ "Descriptions can be any plain text, markdown or html added as the 'description' property to an object (currently, only annotations are supported).")
+		@ActionMenu("Show object descriptions")
+		public final Action SHOW_OBJECT_DESCRIPTIONS = qupath.getDefaultActions().SHOW_OBJECT_DESCRIPTIONS;
 		
 		public final Action SEP_4 = ActionTools.createSeparator();
 		

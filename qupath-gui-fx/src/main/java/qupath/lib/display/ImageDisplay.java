@@ -46,6 +46,8 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.reflect.TypeToken;
 
+import javafx.beans.binding.Bindings;
+import javafx.beans.binding.ObjectBinding;
 import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.LongProperty;
 import javafx.beans.property.SimpleBooleanProperty;
@@ -73,7 +75,7 @@ import qupath.lib.images.servers.PixelType;
  */
 public class ImageDisplay extends AbstractImageRenderer {
 
-	private final static Logger logger = LoggerFactory.getLogger(ImageDisplay.class);
+	private static final Logger logger = LoggerFactory.getLogger(ImageDisplay.class);
 	
 	/**
 	 * Identifier used when storing/retrieving display settings from ImageData properties.
@@ -99,7 +101,10 @@ public class ImageDisplay extends AbstractImageRenderer {
 
 	private LongProperty changeTimestamp = new SimpleLongProperty(System.currentTimeMillis());
 	
-	transient private static Map<String, HistogramManager> cachedHistograms = Collections.synchronizedMap(new HashMap<>());
+	private ObjectBinding<ChannelDisplayMode> displayMode = Bindings.createObjectBinding(() -> calculateDisplayMode(),
+			useGrayscaleLutProperty(), useInvertedBackgroundProperty());
+	
+	private static transient Map<String, HistogramManager> cachedHistograms = Collections.synchronizedMap(new HashMap<>());
 	private HistogramManager histogramManager = null;
 	
 	private static BooleanProperty showAllRGBTransforms = PathPrefs.createPersistentPreference("showAllRGBTransforms", true);
@@ -212,6 +217,26 @@ public class ImageDisplay extends AbstractImageRenderer {
 	public boolean useInvertedBackground() {
 		return useInvertedBackground.get();
 	}
+	
+	/**
+	 * Get the value of {@link #useInvertedBackgroundProperty()}
+	 * @return
+	 */
+	public ObjectBinding<ChannelDisplayMode> displayMode() {
+		return displayMode;
+	}
+	
+	private ChannelDisplayMode calculateDisplayMode() {
+		if (useGrayscaleLuts()) {
+			if (useInvertedBackground())
+				return ChannelDisplayMode.INVERTED_GRAYSCALE;
+			else
+				return ChannelDisplayMode.GRAYSCALE;
+		} else if (useInvertedBackground())
+			return ChannelDisplayMode.INVERTED_COLOR;
+		else
+			return ChannelDisplayMode.COLOR;
+	}
 
 	/**
 	 * Set the value of {@link #useInvertedBackgroundProperty()}
@@ -323,9 +348,9 @@ public class ImageDisplay extends AbstractImageRenderer {
 			// Add color deconvolution options if we have a brightfield image
 			if (imageData.isBrightfield()) {
 				tempChannelOptions.addAll(rgbBrightfieldChannels);
+				tempChannelOptions.add(rgbNormalizedChannelInfo);
 			}
 			if (showAllRGBTransforms.get()) {
-				tempChannelOptions.add(rgbNormalizedChannelInfo);
 				tempChannelOptions.addAll(rgbBasicChannels);
 				tempChannelOptions.addAll(rgbChromaticityChannels);
 			}
@@ -541,18 +566,7 @@ public class ImageDisplay extends AbstractImageRenderer {
 	public BufferedImage applyTransforms(BufferedImage imgInput, BufferedImage imgOutput) {
 //		long startTime = System.currentTimeMillis();
 		
-		ChannelDisplayMode mode;
-		if (useGrayscaleLuts()) {
-			if (useInvertedBackground())
-				mode = ChannelDisplayMode.INVERTED_GRAYSCALE;
-			else
-				mode = ChannelDisplayMode.GRAYSCALE;
-		} else if (useInvertedBackground())
-			mode = ChannelDisplayMode.INVERTED_COLOR;
-		else
-			mode = ChannelDisplayMode.COLOR;
-		
-		BufferedImage imgResult = applyTransforms(imgInput, imgOutput, selectedChannels, mode);
+		BufferedImage imgResult = applyTransforms(imgInput, imgOutput, selectedChannels, displayMode().getValue());
 //		long endTime = System.currentTimeMillis();
 //		System.err.println("Transform time: " + (endTime - startTime));
 		return imgResult;
@@ -999,6 +1013,7 @@ public class ImageDisplay extends AbstractImageRenderer {
 					return server.getDefaultThumbnail(z, t);
 				} catch (IOException e) {
 					logger.error("Error requesting default thumbnail for {} (z={}, t={})", server.getPath(), z, t);
+					logger.error(e.getLocalizedMessage(), e);
 					return null;
 				}
 			}).filter(img -> img != null).collect(Collectors.toList());

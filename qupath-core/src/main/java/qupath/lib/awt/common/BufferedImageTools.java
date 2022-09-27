@@ -32,14 +32,11 @@ import java.awt.image.DataBuffer;
 import java.awt.image.WritableRaster;
 import java.util.Hashtable;
 
-import org.bytedeco.javacpp.indexer.FloatIndexer;
-import org.bytedeco.opencv.global.opencv_core;
-import org.bytedeco.opencv.global.opencv_imgproc;
-import org.bytedeco.opencv.opencv_core.Mat;
-import org.bytedeco.opencv.opencv_core.Size;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import ij.process.FloatProcessor;
+import ij.process.ImageProcessor;
 import qupath.lib.common.ColorTools;
 import qupath.lib.common.GeneralTools;
 import qupath.lib.images.servers.AbstractTileableImageServer;
@@ -404,14 +401,29 @@ public final class BufferedImageTools {
 		return new BufferedImage(img.getColorModel(), raster2, img.isAlphaPremultiplied(), null); 
 	}
 
+	private static boolean isIntType(int type) {
+		switch (type) {
+		case DataBuffer.TYPE_BYTE:
+		case DataBuffer.TYPE_INT:
+		case DataBuffer.TYPE_SHORT:
+		case DataBuffer.TYPE_USHORT:
+			return true;
+		default:
+			return false;
+		}
+	}
+	
 	/**
 	 * Resize the image to have the requested width/height, using area averaging and bilinear interpolation.
 	 * 
 	 * @param img input image to be resized
 	 * @param finalWidth target output width
 	 * @param finalHeight target output height
-	 * @param smoothInterpolate if true, the resize method is permitted to use a smooth interpolation method. If false, nearest-neighbor interpolation is used.
+	 * @param smoothInterpolate if true, the resize method is permitted to use a smooth interpolation method.
+	 *           If false, nearest-neighbor interpolation is used.
 	 * @return resized image
+	 * @implNote the method of smooth interpolation is not currently specified or adjustable.
+	 *           Since v0.4.0, it uses ImageJ's bilinear interpolation with area averaging - however this may change.
 	 */
 	public static BufferedImage resize(final BufferedImage img, final int finalWidth, final int finalHeight, boolean smoothInterpolate) {
 
@@ -432,31 +444,32 @@ public final class BufferedImageTools {
 		WritableRaster raster = img.getRaster();
 		WritableRaster raster2 = raster.createCompatibleWritableRaster(finalWidth, finalHeight);
 
+		boolean isIntType = isIntType(raster.getTransferType());
 		int w = img.getWidth();
 		int h = img.getHeight();
 		
-		Mat matInput = new Mat(h, w, opencv_core.CV_32FC1);
-		Size sizeOutput = new Size(finalWidth, finalHeight);
-		Mat matOutput = new Mat(sizeOutput, opencv_core.CV_32FC1);
-		FloatIndexer idxInput = matInput.createIndexer(true);
-		FloatIndexer idxOutput = matOutput.createIndexer(true);
-		float[] pixels = new float[w*h];
-		float[] pixelsOut = new float[finalWidth*finalHeight];
-		
-		int interp = smoothInterpolate ? opencv_imgproc.INTER_AREA : opencv_imgproc.INTER_NEAREST;
-		for (int b = 0; b < raster.getNumBands(); b++) {
-			raster.getSamples(0, 0, w, h, b, pixels);
-			idxInput.put(0L, pixels);
-			opencv_imgproc.resize(matInput, matOutput, sizeOutput, 0, 0, interp);
-			idxOutput.get(0, pixelsOut);
-			raster2.setSamples(0, 0, finalWidth, finalHeight, b, pixelsOut);
+		boolean areaAveraging;
+
+		var fp = new FloatProcessor(w, h);
+		if (smoothInterpolate) {
+			fp.setInterpolationMethod(ImageProcessor.BILINEAR);
+			areaAveraging = true;
+		} else {
+			fp.setInterpolationMethod(ImageProcessor.NEAREST_NEIGHBOR);
+			areaAveraging = false;
 		}
 		
-		idxInput.release();
-		idxOutput.release();
-		matInput.close();
-		matOutput.close();
-		sizeOutput.close();
+		for (int b = 0; b < raster.getNumBands(); b++) {
+			float[] pixels = (float[])fp.getPixels();
+			raster.getSamples(0, 0, w, h, b, pixels);
+			var fp2 = fp.resize(finalWidth, finalHeight, areaAveraging);
+			float[] pixelsOut = (float[])fp2.getPixels();
+			if (isIntType) {
+				for (int i = 0; i < pixelsOut.length; i++)
+					pixelsOut[i] = Math.round(pixelsOut[i]);
+			}
+			raster2.setSamples(0, 0, finalWidth, finalHeight, b, pixelsOut);
+		}
 		
 //		System.err.println(String.format("Resizing from %d x %d to %d x %d", w, h, finalWidth, finalHeight));
 
