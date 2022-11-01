@@ -98,6 +98,11 @@ public class MonaiLabelClient {
 		public String description;
 	}
 
+	public static class Trainer {
+		public String description;
+		public Map<String, Object> config;
+	}
+
 	public static class ResponseInfo {
 		public String name;
 		public String description;
@@ -105,6 +110,7 @@ public class MonaiLabelClient {
 		public Labels labels;
 		public Map<String, Model> models;
 		public Map<String, Strategy> strategies;
+		public Map<String, Trainer> trainers;
 	}
 
 	public static class ImageInfo {
@@ -118,11 +124,13 @@ public class MonaiLabelClient {
 	public static class NextSampleInfo {
 		public String id;
 		public int[] bbox = { 0, 0, 0, 0 };
+		public String path;
 	}
 
 	public static class InferParams {
 		public List<List<Integer>> foreground = new ArrayList<>();
 		public List<List<Integer>> background = new ArrayList<>();
+		public int max_workers = 1;
 
 		public void addClicks(ArrayList<Point2> clicks, boolean f) {
 			List<List<Integer>> t = f ? foreground : background;
