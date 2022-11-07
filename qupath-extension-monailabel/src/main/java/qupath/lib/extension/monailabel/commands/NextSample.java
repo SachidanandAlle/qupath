@@ -60,7 +60,7 @@ public class NextSample implements Runnable {
 			if (selectedStrategy == null || selectedStrategy.isEmpty()) {
 				selectedStrategy = names.isEmpty() ? "" : names.get(0);
 			}
-			
+
 			boolean imageLoaded = qupath.imageDataProperty() == null || qupath.imageDataProperty().isNull().get() ? false : true;
 			boolean nextPatch = imageLoaded;
 			int[] patchSize = {1024, 1024};
@@ -79,7 +79,7 @@ public class NextSample implements Runnable {
 					nextPatch = list.getBooleanParameterValue("NextPatch").booleanValue();
 					patchSize = Utils.parseStringArray(list.getStringParameterValue("PatchSize"));
 					imageSize = new int[] { imageData.getServer().getWidth(), imageData.getServer().getHeight() };
-					
+
 					logger.info(String.join(",", imageData.getProperties().keySet()));
 				}
 

@@ -74,7 +74,7 @@ public class RunInference implements Runnable {
 			var imageData = viewer.getImageData();
 			var selected = imageData.getHierarchy().getSelectionModel().getSelectedObject();
 			var roi = selected != null ? selected.getROI() : null;
-			
+
 			// Select first RectangleROI if not selected explicitly
 			if (roi == null || !(roi instanceof RectangleROI)) {
 				List<PathObject> objs = imageData.getHierarchy().getFlattenedObjectList(null);
