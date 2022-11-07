@@ -100,7 +100,6 @@ import javafx.collections.ObservableList;
 import javafx.embed.swing.JFXPanel;
 import javafx.embed.swing.SwingFXUtils;
 import javafx.event.ActionEvent;
-import javafx.event.Event;
 import javafx.event.EventHandler;
 import javafx.geometry.Insets;
 import javafx.geometry.Orientation;
@@ -204,7 +203,9 @@ import qupath.lib.gui.prefs.PathPrefs;
 import qupath.lib.gui.prefs.PathPrefs.ImageTypeSetting;
 import qupath.lib.gui.prefs.QuPathStyleManager;
 import qupath.lib.gui.scripting.ScriptEditor;
+import qupath.lib.gui.scripting.ScriptEditorControl;
 import qupath.lib.gui.scripting.languages.GroovyLanguage;
+import qupath.lib.gui.scripting.languages.ScriptLanguageProvider;
 import qupath.lib.gui.tools.ColorToolsFX;
 import qupath.lib.gui.tools.CommandFinderTools;
 import qupath.lib.gui.tools.GuiTools;
@@ -235,7 +236,6 @@ import qupath.lib.objects.PathObjectTools;
 import qupath.lib.objects.PathObjects;
 import qupath.lib.objects.TMACoreObject;
 import qupath.lib.objects.classes.PathClass;
-import qupath.lib.objects.classes.PathClassFactory;
 import qupath.lib.objects.hierarchy.PathObjectHierarchy;
 import qupath.lib.objects.hierarchy.TMAGrid;
 import qupath.lib.plugins.PathInteractivePlugin;
@@ -247,7 +247,12 @@ import qupath.lib.projects.ProjectImageEntry;
 import qupath.lib.projects.Projects;
 import qupath.lib.roi.RoiTools;
 import qupath.lib.roi.interfaces.ROI;
+import qupath.lib.scripting.QP;
+import qupath.lib.scripting.ScriptParameters;
+import qupath.lib.scripting.languages.ExecutableLanguage;
+import qupath.lib.scripting.languages.ScriptLanguage;
 import qupath.lib.gui.scripting.DefaultScriptEditor;
+import qupath.lib.gui.scripting.QPEx;
 
 
 
@@ -360,6 +365,8 @@ public class QuPathGUI {
 	private BooleanBinding uiBlocked = pluginRunning.or(scriptRunning);
 	
 	private SimpleBooleanProperty showInputDisplayProperty = new SimpleBooleanProperty(false);
+	
+	private LogViewerCommand logViewerCommand = new LogViewerCommand(QuPathGUI.this);
 	
 	/**
 	 * Create an {@link Action} that depends upon an {@link ImageData}.
@@ -553,6 +560,7 @@ public class QuPathGUI {
 		 */
 		@ActionAccelerator("shift+s")
 		@ActionIcon(PathIcons.SELECTION_MODE)
+		@ActionDescription("Turn on/off selection mode - this converts drawing tools into selection tools")
 		public final Action SELECTION_MODE = ActionTools.createSelectableAction(PathPrefs.selectionModeProperty(), "Selection mode");
 		
 		// Toolbar actions
@@ -561,28 +569,33 @@ public class QuPathGUI {
 		 */
 		@ActionIcon(PathIcons.CONTRAST)
 		@ActionAccelerator("shift+c")
+		@ActionDescription("Open brightness & contrast dialog - also used to adjust channels and colors")
 		public final Action BRIGHTNESS_CONTRAST = ActionTools.createAction(new BrightnessContrastCommand(QuPathGUI.this), "Brightness/Contrast");
 		
 		/**
 		 * Toggle the image overview display on the viewers.
 		 */
 		@ActionIcon(PathIcons.OVERVIEW)
+		@ActionDescription("Show/hide overview image (top right)")
 		public final Action SHOW_OVERVIEW = ActionTools.createSelectableAction(viewerDisplayOptions.showOverviewProperty(), "Show slide overview");
 		/**
 		 * Toggle the cursor location display on the viewers.
 		 */
 		@ActionIcon(PathIcons.LOCATION)
+		@ActionDescription("Show/hide location text (bottom right)")
 		public final Action SHOW_LOCATION = ActionTools.createSelectableAction(viewerDisplayOptions.showLocationProperty(), "Show cursor location");
 		/**
 		 * Toggle the scalebar display on the viewers.
 		 */
 		@ActionIcon(PathIcons.SHOW_SCALEBAR)
+		@ActionDescription("Show/hide scalebar (bottom left)")
 		public final Action SHOW_SCALEBAR = ActionTools.createSelectableAction(viewerDisplayOptions.showScalebarProperty(), "Show scalebar");
 		/**
 		 * Toggle the counting grid display on the viewers.
 		 */
 		@ActionIcon(PathIcons.GRID)
 		@ActionAccelerator("shift+g")
+		@ActionDescription("Show/hide counting grid overlay")
 		public final Action SHOW_GRID = ActionTools.createSelectableAction(overlayOptions.showGridProperty(), "Show grid");
 		/**
 		 * Prompt to set the spacing for the counting grid.
@@ -599,6 +612,7 @@ public class QuPathGUI {
 		 */
 		@ActionIcon(PathIcons.PIXEL_CLASSIFICATION)
 		@ActionAccelerator("c")
+		@ActionDescription("Show/hide pixel classification overlay (when available)")
 		public final Action SHOW_PIXEL_CLASSIFICATION = ActionTools.createSelectableAction(overlayOptions.showPixelClassificationProperty(), "Show pixel classification");
 			
 		// TMA actions
@@ -634,12 +648,15 @@ public class QuPathGUI {
 		 */
 		@ActionIcon(PathIcons.ANNOTATIONS)
 		@ActionAccelerator("a")
+		@ActionDescription("Show/hide annotation objects")
 		public final Action SHOW_ANNOTATIONS = ActionTools.createSelectableAction(overlayOptions.showAnnotationsProperty(), "Show annotations");
 		
 		/**
 		 * Toggle the display of annotation names.
 		 */
+		@ActionIcon(PathIcons.SHOW_NAMES)
 		@ActionAccelerator("n")
+		@ActionDescription("Show/hide annotation names (where available)")
 		public final Action SHOW_NAMES = ActionTools.createSelectableAction(overlayOptions.showNamesProperty(), "Show names");
 		
 		/**
@@ -647,6 +664,7 @@ public class QuPathGUI {
 		 */
 		@ActionIcon(PathIcons.ANNOTATIONS_FILL)
 		@ActionAccelerator("shift+f")
+		@ActionDescription("Full/unfill annotation objects")
 		public final Action FILL_ANNOTATIONS = ActionTools.createSelectableAction(overlayOptions.fillAnnotationsProperty(), "Fill annotations");	
 		
 		/**
@@ -654,6 +672,7 @@ public class QuPathGUI {
 		 */
 		@ActionIcon(PathIcons.TMA_GRID)
 		@ActionAccelerator("g")
+		@ActionDescription("Show/hide TMA grid")
 		public final Action SHOW_TMA_GRID = ActionTools.createSelectableAction(overlayOptions.showTMAGridProperty(), "Show TMA grid");
 		/**
 		 * Toggle the display of TMA grid labels.
@@ -665,6 +684,7 @@ public class QuPathGUI {
 		 */
 		@ActionIcon(PathIcons.DETECTIONS)
 		@ActionAccelerator("d")
+		@ActionDescription("Show/hide detection objects")
 		public final Action SHOW_DETECTIONS = ActionTools.createSelectableAction(overlayOptions.showDetectionsProperty(), "Show detections");
 		
 		/**
@@ -672,6 +692,7 @@ public class QuPathGUI {
 		 */
 		@ActionIcon(PathIcons.DETECTIONS_FILL)
 		@ActionAccelerator("f")
+		@ActionDescription("Fill/unfill detection objects")
 		public final Action FILL_DETECTIONS = ActionTools.createSelectableAction(overlayOptions.fillDetectionsProperty(), "Fill detections");	
 		/**
 		 * Display the convex hull of point ROIs.
@@ -693,7 +714,7 @@ public class QuPathGUI {
 		 * Show the main log window.
 		 */
 		@ActionAccelerator("shortcut+shift+l")
-		public final Action SHOW_LOG = ActionTools.createAction(new LogViewerCommand(QuPathGUI.this), "Show log");
+		public final Action SHOW_LOG = ActionTools.createAction(logViewerCommand, "Show log");
 
 		/**
 		 * Toggle the visibility of the 'Analysis pane' in the main viewer.
@@ -726,6 +747,18 @@ public class QuPathGUI {
 		@ActionDescription("Show summary measurements for detection objects")
 		public final Action MEASURE_DETECTIONS = createImageDataAction(imageData -> Commands.showDetectionMeasurementTable(QuPathGUI.this, imageData), "Show detection measurements");
 		
+		/**
+		 * Show grid view for annotation measurements.
+		 */
+		@ActionDescription("Show grid view annotation objects")
+		public final Action MEASURE_GRID_ANNOTATIONS = createImageDataAction(imageData -> Commands.showAnnotationGridView(QuPathGUI.this), "Show annotation grid view");
+
+		/**
+		 * Show grid view for TMA core measurements.
+		 */
+		@ActionDescription("Show grid view TMA cores")
+		public final Action MEASURE_GRID_TMA_CORES = createImageDataAction(imageData -> Commands.showAnnotationGridView(QuPathGUI.this), "Show TMA core grid view");
+
 		private DefaultActions() {
 			// This has the effect of applying the annotations
 			ActionTools.getAnnotatedActions(this);
@@ -1198,6 +1231,10 @@ public class QuPathGUI {
 		if (!startupQuietly)
 			showStartupMessage();
 		
+		// Add listeners to set default project and image data
+		imageDataProperty.addListener((v, o, n) -> QP.setDefaultImageData(n));
+		projectProperty.addListener((v, o, n) -> QP.setDefaultProject(n));
+		
 		// Run startup script, if we can
 		try {
 			runStartupScript();			
@@ -1458,19 +1495,6 @@ public class QuPathGUI {
 			return Paths.get(System.getProperty("user.home"), "QuPath").toFile();
 	}
 	
-	
-	
-	/**
-	 * Check if extensions can be installed.
-	 * 
-	 * Generally, extensions can only be added if running from within a jar.
-	 * 
-	 * @return
-	 */
-	public boolean canInstallExtensions() {
-		return true;
-	}
-		
 	/**
 	 * Get the directory containing the QuPath code
 	 * @return {@link File} object representing the code directory, or null if this cannot be determined
@@ -1679,6 +1703,7 @@ public class QuPathGUI {
 	 * @param showNotification if true, display a notification if a new extension has been loaded
 	 */
 	public void refreshExtensions(final boolean showNotification) {
+		
 		boolean initializing = initializingMenus.get();
 		initializingMenus.set(true);
 		
@@ -1767,56 +1792,13 @@ public class QuPathGUI {
 			logger.debug("No extensions to install!");
 			return;
 		}
-		if (!canInstallExtensions()) {
-			Dialogs.showErrorMessage("Install extension", "Cannot install extensions when not running QuPath from a .jar file (application), sorry!");
-			return;
-		}
+
 		File dir = getExtensionDirectory();
 		if (dir == null || !dir.isDirectory()) {
 			logger.info("No extension directory found!");
-			// Prompt to create an extensions directory
-			File dirDefault = getDefaultQuPathUserDirectory();
-			String msg;
-			if (dirDefault.exists()) {
-				msg = dirDefault.getAbsolutePath() + " already exists.\n" +
-						"Do you want to use this default, or specify another directory?";
-			} else {
-				msg = String.format("Do you want to create a new user directory at %s?\n",
-						dirDefault.getAbsolutePath());
-			}
-			
-			Dialog<ButtonType> dialog = new Dialog<>();
-			dialog.initOwner(getStage());
-
-			ButtonType btUseDefault = new ButtonType("Use default", ButtonData.YES);
-			ButtonType btChooseDirectory = new ButtonType("Choose directory", ButtonData.NO);
-			ButtonType btCancel = new ButtonType("Cancel", ButtonData.CANCEL_CLOSE);
-			dialog.getDialogPane().getButtonTypes().setAll(btUseDefault, btChooseDirectory, btCancel);
-
-			dialog.setHeaderText(null);
-			dialog.setTitle("Choose extensions directory");
-			dialog.setHeaderText("No user directory set.");
-			dialog.setContentText(msg);
-			Optional<ButtonType> result = dialog.showAndWait();
-			if (!result.isPresent() || result.get() == btCancel) {
-				logger.info("No extension directory set - extensions not installed");
+			var dirUser = requestUserDirectory(true);
+			if (dirUser == null)
 				return;
-			}
-			if (result.get() == btUseDefault) {
-				if (!dirDefault.exists() && !dirDefault.mkdirs()) {
-					Dialogs.showErrorMessage("Extension error", "Unable to create directory at \n" + dirDefault.getAbsolutePath());
-					return;
-				}
-				PathPrefs.userPathProperty().set(dirDefault.getAbsolutePath());
-			} else {
-				File dirUser = Dialogs.promptForDirectory("Set user directory", dirDefault);
-				if (dirUser == null) {
-					logger.info("No QuPath user directory set - extensions not installed");
-					return;
-				}
-				PathPrefs.userPathProperty().set(dirUser.getAbsolutePath());
-			}
-			// Now get the extensions directory (within the user directory)
 			dir = getExtensionDirectory();
 		}
 		// Create directory if we need it
@@ -1846,6 +1828,135 @@ public class QuPathGUI {
 	}
 	
 	
+    /**
+     * Handle installing CSS files (which can be used to style QuPath).
+     * @param list list of css files
+     * @return
+     */
+	public boolean installStyles(final Collection<File> list) {
+		var dir = requestUserDirectory(true);
+		if (dir == null)
+			return false;
+		
+		var pathCssString = PathPrefs.getCssStylesPath();
+		
+		int nInstalled = 0;
+		try {
+			// If we have a user directory, add a CSS subdirectory if needed
+			var pathCss = Paths.get(pathCssString);
+			if (!Files.exists(pathCss)) {
+				if (Files.isDirectory(pathCss.getParent()))
+					Files.createDirectory(pathCss);
+			}
+			// If we still don't have a css directory, return
+			if (!Files.isDirectory(pathCss))
+				return false;
+			
+			// Copy over the files
+			Boolean overwriteExisting = null;
+			for (var file : list) {
+				if (!file.getName().toLowerCase().endsWith(".css")) {
+					logger.warn("Cannot install style for {} - not a .css file!", file);
+					continue;
+				}
+				var source = file.toPath();
+				var target = pathCss.resolve(file.getName());
+				if (Objects.equals(source, target)) {
+					logger.warn("Can't copy CSS - source and target files are the same!");
+					continue;
+				}
+				if (Files.exists(target)) {
+					// Check if we want to overwrite - if so, retain the response so we don't 
+					// have to prompt multiple times if there are multiple files
+					if (overwriteExisting == null) {
+						var response = Dialogs.showYesNoCancelDialog("Install CSS", "Do you want to overwrite existing CSS files?");
+						if (response == DialogButton.YES)
+							overwriteExisting = Boolean.TRUE;
+						else if (response == DialogButton.NO)
+							overwriteExisting = Boolean.FALSE;
+						else // cancelled
+							return false;
+					}
+					// Skip
+					if (!overwriteExisting)
+						continue;
+				}
+				logger.info("Copying {} -> {}", source, target);
+				Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING);	
+				nInstalled++;
+			}
+		} catch (IOException e) {
+			logger.error("Exception installing CSS files: " + e.getLocalizedMessage(), e);
+			return false;
+		}
+		if (nInstalled > 0)
+			QuPathStyleManager.updateAvailableStyles();
+		return true;
+	}
+	
+	
+	/**
+	 * Request the current user directory, optionally prompting the user to request a director if none is available.
+	 * @param promptIfMissing 
+	 * @return
+	 */
+	public File requestUserDirectory(boolean promptIfMissing) {
+		
+		var pathUser = PathPrefs.getUserPath();
+		var dir = pathUser == null ? null : new File(pathUser);
+		if (dir != null && dir.isDirectory())
+			return dir;
+		
+		if (!promptIfMissing)
+			return null;
+		
+		// Prompt to create an extensions directory
+		File dirDefault = getDefaultQuPathUserDirectory();
+		String msg;
+		if (dirDefault.exists()) {
+			msg = dirDefault.getAbsolutePath() + " already exists.\n" +
+					"Do you want to use this default, or specify another directory?";
+		} else {
+			msg = String.format("Do you want to create a new user directory at\n %s?",
+					dirDefault.getAbsolutePath());
+		}
+		
+		ButtonType btUseDefault = new ButtonType("Use default", ButtonData.YES);
+		ButtonType btChooseDirectory = new ButtonType("Choose directory", ButtonData.NO);
+		ButtonType btCancel = new ButtonType("Cancel", ButtonData.CANCEL_CLOSE);
+		
+		var result = Dialogs.builder()
+			.title("Choose user directory")
+			.headerText("No user directory set")
+			.contentText(msg)
+			.buttons(btUseDefault, btChooseDirectory, btCancel)
+			.showAndWait()
+			.orElse(btCancel);
+			
+		if (result == btCancel) {
+			logger.info("Dialog cancelled - no user directory set");
+			return null;
+		}
+		if (result == btUseDefault) {
+			if (!dirDefault.exists() && !dirDefault.mkdirs()) {
+				Dialogs.showErrorMessage("Extension error", "Unable to create directory at \n" + dirDefault.getAbsolutePath());
+				return null;
+			}
+			dir = dirDefault;
+		} else {
+			File dirUser = Dialogs.promptForDirectory("Set user directory", dirDefault);
+			if (dirUser == null) {
+				logger.info("No QuPath user directory set!");
+				return null;
+			}
+			dir = dirUser;
+		}
+		PathPrefs.userPathProperty().set(dir.getAbsolutePath());
+		return dir;
+	}
+	
+	
+	
 	/**
 	 * Initialize available PathClasses, either from saved list or defaults
 	 */
@@ -1866,7 +1977,7 @@ public class QuPathGUI {
 			// Therefore if we find some non-unique nor null elements, correct the list as soon as possible
 			var list = c.getList();
 			var set = new LinkedHashSet<PathClass>();
-			set.add(PathClassFactory.getPathClassUnclassified());
+			set.add(PathClass.NULL_CLASS);
 			set.addAll(list);
 			set.remove(null);
 			if (!(set.size() == list.size() && set.containsAll(list))) {
@@ -1892,16 +2003,16 @@ public class QuPathGUI {
 	 */
 	public boolean resetAvailablePathClasses() {
 		List<PathClass> pathClasses = Arrays.asList(
-				PathClassFactory.getPathClassUnclassified(),
-				PathClassFactory.getPathClass(PathClassFactory.StandardPathClasses.TUMOR),
-				PathClassFactory.getPathClass(PathClassFactory.StandardPathClasses.STROMA),
-				PathClassFactory.getPathClass(PathClassFactory.StandardPathClasses.IMMUNE_CELLS),
-				PathClassFactory.getPathClass(PathClassFactory.StandardPathClasses.NECROSIS),
-				PathClassFactory.getPathClass(PathClassFactory.StandardPathClasses.OTHER),
-				PathClassFactory.getPathClass(PathClassFactory.StandardPathClasses.REGION),
-				PathClassFactory.getPathClass(PathClassFactory.StandardPathClasses.IGNORE),
-				PathClassFactory.getPathClass(PathClassFactory.StandardPathClasses.POSITIVE),
-				PathClassFactory.getPathClass(PathClassFactory.StandardPathClasses.NEGATIVE)
+				PathClass.NULL_CLASS,
+				PathClass.StandardPathClasses.TUMOR,
+				PathClass.StandardPathClasses.STROMA,
+				PathClass.StandardPathClasses.IMMUNE_CELLS,
+				PathClass.StandardPathClasses.NECROSIS,
+				PathClass.StandardPathClasses.OTHER,
+				PathClass.StandardPathClasses.REGION,
+				PathClass.StandardPathClasses.IGNORE,
+				PathClass.StandardPathClasses.POSITIVE,
+				PathClass.StandardPathClasses.NEGATIVE
 				);
 		
 		if (availablePathClasses == null) {
@@ -1927,7 +2038,7 @@ public class QuPathGUI {
 			List<PathClass> pathClassesOriginal = (List<PathClass>)in.readObject();
 			List<PathClass> pathClasses = new ArrayList<>();
 			for (PathClass pathClass : pathClassesOriginal) {
-				PathClass singleton = PathClassFactory.getSingletonPathClass(pathClass);
+				PathClass singleton = PathClass.getSingleton(pathClass);
 				// Ensure the color is set
 				if (singleton != null && pathClass.getColor() != null)
 					singleton.setColor(pathClass.getColor());
@@ -2086,6 +2197,27 @@ public class QuPathGUI {
 			PathPrefs.getUserPreferences().putByteArray("defaultPathClasses", bytes);
 		else
 			logger.error("Classification list too long ({} bytes) - cannot save it to the preferences.", bytes.length);
+	}
+	
+	
+	
+	
+	private Menu createRecentProjectsMenu() {
+		
+		// Create a recent projects list in the File menu
+		ObservableList<URI> recentProjects = PathPrefs.getRecentProjectList();
+		Menu menuRecent = GuiTools.createRecentItemsMenu("Recent projects...", recentProjects, uri -> {
+			Project<BufferedImage> project;
+			try {
+				project = ProjectIO.loadProject(uri, BufferedImage.class);
+				setProject(project);
+			} catch (Exception e1) {
+				Dialogs.showErrorMessage("Project error", "Cannot find project " + uri);
+				logger.error("Error loading project", e1);
+			}
+		}, Project::getNameFromURI);
+		
+		return menuRecent;
 	}
 	
 	
@@ -3178,8 +3310,8 @@ public class QuPathGUI {
 	public MenuItem installGroovyCommand(String menuPath, final File file) {
 		return installCommand(menuPath, () -> {
 			try {
-				runScript(file, getImageData());
-			} catch (IOException | ScriptException e) {
+				runScript(file, null);
+			} catch (ScriptException e) {
 				Dialogs.showErrorMessage("Script error", e);
 			}
 		});
@@ -3197,7 +3329,7 @@ public class QuPathGUI {
 	public MenuItem installGroovyCommand(String menuPath, final String script) {
 		return installCommand(menuPath, () -> {
 			try {
-				runScript(script, getImageData());
+				runScript(null, script);
 			} catch (ScriptException e) {
 				Dialogs.showErrorMessage("Script error", e);
 			}
@@ -3286,28 +3418,35 @@ public class QuPathGUI {
 		
 	
 	/**
-	 * Convenience method to execute a Groovy script.
+	 * Convenience method to execute a script.
+	 * Either a script file or the text of the script must be provided, or both.
+	 * <p>
+	 * If only the script text is given, the language is assumed to be Groovy.
+	 * 
+	 * @param file the file containing the script to run
 	 * @param script the script to run
-	 * @param imageData an {@link ImageData} object for the current image (may be null)
 	 * @return result of the script execution
 	 * @throws ScriptException 
+	 * @throws IllegalArgumentException if both file and script are null
 	 */
-	private Object runScript(final String script, final ImageData<BufferedImage> imageData) throws ScriptException {
-		return DefaultScriptEditor.executeScript(GroovyLanguage.getInstance(), script, getProject(), imageData, true, null);
-	}
-	
-	/**
-	 * Convenience method to execute a Groovy from a file.
-	 * The file will be reloaded each time it is required.
-	 * @param file File containing the script to run
-	 * @param imageData an {@link ImageData} object for the current image (may be null)
-	 * @return result of the script execution
-	 * @throws IOException 
-	 * @throws ScriptException 
-	 */
-	private Object runScript(final File file, final ImageData<BufferedImage> imageData) throws IOException, ScriptException {
-		var script = GeneralTools.readFileAsString(file.getAbsolutePath());
-		return runScript(script, imageData);
+	public Object runScript(final File file, final String script) throws ScriptException, IllegalArgumentException {
+		var params = ScriptParameters.builder()
+						.setProject(getProject())
+						.setImageData(getImageData())
+						.setDefaultImports(QPEx.getCoreClasses())
+						.setDefaultStaticImports(Collections.singletonList(QPEx.class))
+						.setFile(file)
+						.setScript(script)
+						.setBatchSaveResult(false)
+						.useLogWriters()
+						.build();
+		ScriptLanguage language = null;
+		if (file != null) {
+			language = ScriptLanguageProvider.fromString(file.getName());
+		}
+		if (!(language instanceof ExecutableLanguage))
+			language = GroovyLanguage.getInstance();
+		return ((ExecutableLanguage)language).execute(params);
 	}
 	
 	
@@ -3566,45 +3705,6 @@ public class QuPathGUI {
 		poolMultipleThreads.submit(runnable);
 	}
 	
-	
-	private Menu createRecentProjectsMenu() {
-		
-		// Create a recent projects list in the File menu
-		ObservableList<URI> recentProjects = PathPrefs.getRecentProjectList();
-		Menu menuRecent = MenuTools.createMenu("Recent projects...");
-		
-		EventHandler<Event> validationHandler = e -> {
-			menuRecent.getItems().clear();
-			for (URI uri : recentProjects) {
-				if (uri == null)
-					continue;
-				String name = Project.getNameFromURI(uri);
-				name = ".../" + name;
-				MenuItem item = new MenuItem(name);
-				item.setOnAction(e2 -> {
-					Project<BufferedImage> project;
-					try {
-						project = ProjectIO.loadProject(uri, BufferedImage.class);
-						setProject(project);
-					} catch (Exception e1) {
-						Dialogs.showErrorMessage("Project error", "Cannot find project " + uri);
-						logger.error("Error loading project", e1);
-					}
-				});
-				menuRecent.getItems().add(item);
-			}
-		};
-		
-		// Ensure the menu is populated
-		menuRecent.parentMenuProperty().addListener((v, o, n) -> {
-			if (o != null && o.getOnMenuValidation() == validationHandler)
-				o.setOnMenuValidation(null);
-			if (n != null)
-				n.setOnMenuValidation(validationHandler);
-		});
-		
-		return menuRecent;
-	}
 	
 	
 	
@@ -3995,6 +4095,14 @@ public class QuPathGUI {
 	}
 	
 	
+	/**
+	 * Set the control used to display log messages.
+	 * @param control
+	 */
+	public void setLogControl(final ScriptEditorControl<?> control) {
+		logViewerCommand.setLogControl(control);
+	}
+	
 	
 	/**
 	 * Repaint the viewer.  In the future, if multiple viewers are registered with the GUI 
@@ -4359,9 +4467,9 @@ public class QuPathGUI {
 				project.setPathClasses(getAvailablePathClasses());
 			} else {
 				// Update the available classes
-				if (!pathClasses.contains(PathClassFactory.getPathClassUnclassified())) {
+				if (!pathClasses.contains(PathClass.NULL_CLASS)) {
 					pathClasses = new ArrayList<>(pathClasses);
-					pathClasses.add(0, PathClassFactory.getPathClassUnclassified());
+					pathClasses.add(0, PathClass.NULL_CLASS);
 				}
 				getAvailablePathClasses().setAll(pathClasses);
 			}
@@ -4992,7 +5100,7 @@ public class QuPathGUI {
 //			hierarchy.addPathObject(annotation, false);
 			
 //			// Make sure any core parent is set
-			hierarchy.addPathObjectBelowParent(coreNewParent, annotation, true);
+			hierarchy.addObjectBelowParent(coreNewParent, annotation, true);
 			
 			activeViewer.setSelectedObject(annotation);
 			return true;

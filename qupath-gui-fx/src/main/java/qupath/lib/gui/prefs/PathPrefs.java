@@ -717,13 +717,21 @@ public class PathPrefs {
 	}
 		
 	
-	private static StringProperty userPath = createPersistentPreference("userPath", (String)null); // Base directory containing extensions
+	private static ObjectProperty<String> userPath = createPersistentPreference("userPath", (String)null, PathPrefs::blankStringToNull, PathPrefs::blankStringToNull); // Base directory containing extensions
 
+	
+	private static String blankStringToNull(String input) {
+		if (input == null)
+			return null;
+		return input.isBlank() ? null : input;
+	}
+	
+	
 	/**
 	 * A path where additional files may be stored, such as extensions and log files.
 	 * @return
 	 */
-	public static StringProperty userPathProperty() {
+	public static ObjectProperty<String> userPathProperty() {
 		return userPath;
 	}
 	
@@ -737,7 +745,8 @@ public class PathPrefs {
 	
 	/**
 	 * Get the path to where extensions should be stored. This depends upon {@link #userPathProperty()}.
-	 * @return
+	 * @return the path if available, or null if {@link #getUserPath()} returns null
+	 * @implSpec a non-null return value does not guarantee that the path exists, rather it just represents the expected extensions directory.
 	 */
 	public static String getExtensionsPath() {
 		String userPath = getUserPath();
@@ -747,8 +756,22 @@ public class PathPrefs {
 	}
 	
 	/**
+	 * Get the path to where user directory for storing CSS styles. This depends upon {@link #userPathProperty()}.
+	 * @return the path if available, or null if {@link #getUserPath()} returns null
+	 * @implSpec a non-null return value does not guarantee that the path exists, rather it just represents the expected CSS directory.
+	 * @since v0.4.0
+	 */
+	public static String getCssStylesPath() {
+		String userPath = getUserPath();
+		if (userPath == null)
+			return null;
+		return new File(userPath, "css").getAbsolutePath();
+	}
+	
+	/**
 	 * Get the path to where log files should be written. This depends upon {@link #userPathProperty()}.
-	 * @return
+	 * @return the path if available, or null if {@link #getUserPath()} returns null
+	 * @implSpec a non-null return value does not guarantee that the path exists, rather it just represents the expected log file directory.
 	 */
 	public static String getLoggingPath() {
 		String userPath = getUserPath();
@@ -814,6 +837,46 @@ public class PathPrefs {
 	public static ObservableList<URI> getRecentProjectList() {
 		return recentProjects;
 	}
+	
+	
+	
+	private static int nRecentScripts = 8;
+	private static ObservableList<URI> recentScripts = FXCollections.observableArrayList();
+	
+	static {
+		// Try to load the recent scripts
+		for (int i = 0; i < nRecentScripts; i++) {
+			String project = getUserPreferences().get("recentScript" + i, null);
+			if (project == null || project.length() == 0)
+				break;
+			try {
+				recentScripts.add(GeneralTools.toURI(project));
+			} catch (URISyntaxException e) {
+				logger.warn("Unable to parse URI from " + project, e);
+			}
+		}
+		// Add a listener to keep storing the preferences, as required
+		recentScripts.addListener((Change<? extends URI> c) -> {
+			int i = 0;
+			for (URI project : recentScripts) {
+				getUserPreferences().put("recentScript" + i, project.toString());
+				i++;
+			}
+			while (i < nRecentScripts) {
+				getUserPreferences().put("recentScript" + i, "");
+				i++;
+			}
+		});
+	}
+	
+	/**
+	 * Get a list of the most recent scripts that were opened.
+	 * @return
+	 */
+	public static ObservableList<URI> getRecentScriptsList() {
+		return recentScripts;
+	}
+	
 	
 	
 	private static BooleanProperty invertScrolling = createPersistentPreference("invertScrolling", !GeneralTools.isMac());
@@ -1006,6 +1069,16 @@ public class PathPrefs {
 	 */
 	public static BooleanProperty showMeasurementTableThumbnailsProperty() {
 		return showMeasurementTableThumbnailsProperty;
+	}
+	
+	private static BooleanProperty showMeasurementTableObjectIDsProperty = PathPrefs.createPersistentPreference("showMeasurementTableObjectIDsProperty", true);
+	
+	/**
+	 * Specify whether measurement tables should show object IDs by default or not.
+	 * @return
+	 */
+	public static BooleanProperty showMeasurementTableObjectIDsProperty() {
+		return showMeasurementTableObjectIDsProperty;
 	}
 	
 	private static BooleanProperty enableFreehandTools = createPersistentPreference("enableFreehandTools", true);
@@ -1330,6 +1403,21 @@ public class PathPrefs {
 	}
 	
 	
+	
+	private static IntegerProperty maxObjectsToClipboard = PathPrefs.createPersistentPreference("maxObjectsToClipboard", 5_000);
+
+	/**
+	 * The maximum number of objects that can be copied to the system clipboard.
+	 * This is to avoid accidentally putting very large amounts of data on the clipboard (causing the app to slow down or freeze), 
+	 * or attempting to create strings that are too long.
+	 * @return
+	 */
+	public static IntegerProperty maxObjectsToClipboardProperty() {
+		return maxObjectsToClipboard;
+	}
+	
+	
+	
 	/**
 	 * Enum to control font size.
 	 */
@@ -1641,7 +1729,9 @@ public class PathPrefs {
 				getUserPreferences().remove(name);
 			else {
 				var string = serializer.apply(n);
-				if (string.length() > Preferences.MAX_VALUE_LENGTH)
+				if (string == null) {
+					getUserPreferences().remove(name);
+				} else if (string.length() > Preferences.MAX_VALUE_LENGTH)
 					logger.warn("Unable to set preference {} to {} - String representation exceeds maximum length ({})", name, n, Preferences.MAX_VALUE_LENGTH);
 				else
 					getUserPreferences().put(name, string);
